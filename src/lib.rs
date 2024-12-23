@@ -30,8 +30,19 @@ struct SnapshotMetadata {
 #[derive(Debug)]
 pub struct SnapshotComparison {
     pub new_files: Vec<String>,
-    pub modified_files: Vec<String>,
+    pub modified_files: Vec<ModifiedFileDetail>,
     pub deleted_files: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct ModifiedFileDetail {
+    pub path: String,
+    pub old_size: u64,
+    pub new_size: u64,
+    pub old_hash: String,
+    pub new_hash: String,
+    pub old_last_modified: String,
+    pub new_last_modified: String,
 }
 
 pub fn initialize_directory(path: &str) -> Result<(), std::io::Error> {
@@ -120,12 +131,11 @@ pub fn compare_snapshots(
     let base_path = Path::new(path);
     let metadata_path = base_path.join(".timemachine/metadata.json");
 
-    // read to string to parse to json
+    // Read the metadata file and parse it
     let metadata_content = fs::read_to_string(metadata_path)?;
     let metadata: SnapshotMetadata = serde_json::from_str(&metadata_content)?;
 
-    // find snapshot 1 and 2 from metadata
-
+    // Find the snapshots by ID
     let snapshot1 = metadata
         .snapshots
         .iter()
@@ -170,7 +180,15 @@ pub fn compare_snapshots(
         if let Some(file_state1) = snapshot1_file_map.get(path) {
             // 2. Check for modified files (same file path, but different hash or size)
             if file_state1.hash != file_state2.hash || file_state1.size != file_state2.size {
-                modified_files.push(path.clone());
+                modified_files.push(ModifiedFileDetail {
+                    path: path.clone(),
+                    old_size: file_state1.size,
+                    new_size: file_state2.size,
+                    old_hash: file_state1.hash.clone(),
+                    new_hash: file_state2.hash.clone(),
+                    old_last_modified: file_state1.last_modified.clone(),
+                    new_last_modified: file_state2.last_modified.clone(),
+                });
             }
         } else {
             // File exists in snapshot2 but not in snapshot1 (new file)
@@ -295,8 +313,20 @@ mod tests {
 
         // Assert that the comparison is correct
         assert_eq!(comparison.new_files, vec!["file3.txt"]);
-        assert_eq!(comparison.modified_files, vec!["file1.txt"]);
         assert_eq!(comparison.deleted_files, Vec::<String>::new());
+        assert_eq!(comparison.modified_files.len(), 1);
+
+        // Assert detailed info for modified file (file1.txt)
+        let modified_file = &comparison.modified_files[0];
+        assert_eq!(modified_file.path, "file1.txt");
+        assert_eq!(modified_file.old_size, 14);  // Size of "Hello, world!\n"
+        assert_eq!(modified_file.new_size, 22);  // Size of "Hello, updated world!\n"
+        assert_eq!(modified_file.old_hash, "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5");
+        assert_eq!(modified_file.new_hash, "05c9a0cb7e51316bce559640f1cc42d6cf5a8e9c5c870e5f742e2533e669f73d");
+        
+        // Verify timestamps are present (actual values will vary)
+        assert!(!modified_file.old_last_modified.is_empty());
+        assert!(!modified_file.new_last_modified.is_empty());
 
         // Temporary directory is automatically cleaned up
     }
