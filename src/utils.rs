@@ -1,13 +1,13 @@
 use crate::FileState;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::Path;
 
 fn compute_hash(path: &Path) -> Result<String, std::io::Error> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher).expect("File copy failed");
+    io::copy(&mut file, &mut hasher).expect("File copy failed");
     let result = hasher.finalize();
     Ok(format!("{:x}", result))
 }

@@ -18,6 +18,14 @@ enum Commands {
         #[arg(value_name = "DIRECTORY")]
         dir: String,
     },
+    Compare {
+        #[arg(value_name = "DIRECTORY")]
+        dir: String,
+        #[arg(value_name = "SNAPSHOT_ID_1")]
+        snapshot_id1: usize,
+        #[arg(value_name = "SNAPSHOT_ID_2")]
+        snapshot_id2: usize,
+    },
 }
 fn main() {
     let cli = Cli::parse();
@@ -27,9 +35,25 @@ fn main() {
             Ok(_) => eprintln!("Initialization complete with metadata! {}", dir),
             Err(e) => eprintln!("Initialization failed {:?}", e),
         },
-        Commands::Snapshot {dir} => match timemachine::take_snapshot(dir) {
+        Commands::Snapshot { dir } => match timemachine::take_snapshot(dir) {
             Ok(_) => eprintln!("Snapshot taken succesfully!"),
-            Err(e) => eprintln!("Snapshot failed {}", e)
-        }
+            Err(e) => eprintln!("Snapshot failed {}", e),
+        },
+        Commands::Compare {
+            dir,
+            snapshot_id1,
+            snapshot_id2,
+        } => match timemachine::compare_snapshots(dir, *snapshot_id1, *snapshot_id2) {
+            Ok(comparison) => {
+                eprintln!(
+                    "Comparison between snapshot {} and snapshot {}:",
+                    snapshot_id1, snapshot_id2
+                );
+                eprintln!("New Files: {:?}", comparison.new_files);
+                eprintln!("Modified Files: {:?}", comparison.modified_files);
+                eprintln!("Deleted Files: {:?}", comparison.deleted_files);
+            }
+            Err(e) => eprintln!("Failed to compare snapshots: {}", e),
+        },
     }
 }
