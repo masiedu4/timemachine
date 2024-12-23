@@ -27,13 +27,6 @@ struct SnapshotMetadata {
     snapshots: Vec<Snapshot>,
 }
 
-/// Initializes the given directory for Time Machine by creating a `.timemachine` folder.
-///
-/// # Arguments
-/// * `path` - The directory to initialize.
-///
-/// # Returns
-/// * `Result<(), io::Error>` - An `Ok` result indicates success.
 pub fn initialize_directory(path: &str) -> Result<(), std::io::Error> {
     let base_path = Path::new(path);
     let metadata_dir = base_path.join(".timemachine");
