@@ -1,19 +1,26 @@
+mod utils;
 
-
+use crate::utils::collect_file_states;
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{Write};
+use std::io::Write;
 use std::path::Path;
 
-
+#[derive(Serialize, Deserialize, Debug)]
+struct FileState {
+    path: String,
+    size: u64,
+    last_modified: String,
+    hash: String,
+}
 #[derive(Serialize, Deserialize, Debug)]
 struct Snapshot {
     id: usize,
     timestamp: String,
     changes: usize,
+    file_states: Vec<FileState>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SnapshotMetadata {
@@ -63,7 +70,6 @@ pub fn initialize_metadata(path: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-
 pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     let base_path = Path::new(dir);
     let metadata_dir = base_path.join(".timemachine");
@@ -71,7 +77,9 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
 
     // ensure that timestamp directory exisits
     if !metadata_dir.exists() {
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Time machine not initialized"));
+        initialize_directory(base_path.to_str().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path encoding")
+        })?)?;
     }
 
     // Load existing metadata or create a new one
@@ -79,25 +87,21 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
         let content = fs::read_to_string(&metadata_path)?;
         serde_json::from_str(&content)?
     } else {
-        SnapshotMetadata { snapshots: Vec::new() }
+        SnapshotMetadata {
+            snapshots: Vec::new(),
+        }
     };
 
-    // Count files in the directory (excluding the .timemachine directory)
-    let files = fs::read_dir(base_path)?.filter(|entry| {
-        if let Ok(entry) = entry {
-            !entry.path().starts_with(&metadata_dir)
-        } else {
-            false
-        }
-    }).count();
+    let file_states = collect_file_states(&base_path)?;
 
     // Create a new snapshot entry
 
-    let current_timestamp : String = Local::now().to_rfc3339();
+    let current_timestamp: String = Local::now().to_rfc3339();
     let snapshot = Snapshot {
-     id:metadata.snapshots.len() +1,
-        timestamp:current_timestamp,
-        changes:files,
+        id: metadata.snapshots.len() + 1,
+        timestamp: current_timestamp,
+        changes: file_states.len(),
+        file_states,
     };
 
     metadata.snapshots.push(snapshot);
@@ -106,70 +110,69 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     println!("Snapshot taken succesfully!");
 
     Ok(())
-
 }
 
+#[cfg(test)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::Path;
+    use tempfile::tempdir;
 
-    #[cfg(test)]
+    #[test]
+    fn test_initialize_metadata_directory() {
+        let test_dir = tempdir().unwrap(); // Use a unique temp directory
+        let test_path = test_dir.path().to_str().unwrap();
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use std::fs;
-        use std::fs::File;
-        use std::io::Write;
-        use std::path::Path;
-        use tempfile::tempdir;
+        // Initialize the directory
+        initialize_directory(test_path).unwrap();
 
-        #[test]
-        fn test_initialize_metadata_directory() {
-            let test_dir = tempdir().unwrap(); // Use a unique temp directory
-            let test_path = test_dir.path().to_str().unwrap();
+        // Check if metadata.json exists
+        let metadata_path = Path::new(test_path)
+            .join(".timemachine")
+            .join("metadata.json");
 
-            // Initialize the directory
-            initialize_directory(test_path).unwrap();
+        assert!(metadata_path.exists());
 
-            // Check if metadata.json exists
-            let metadata_path = Path::new(test_path)
-                .join(".timemachine")
-                .join("metadata.json");
+        let metadata_content = fs::read_to_string(metadata_path).unwrap();
+        assert_eq!(metadata_content, r#"{"snapshots":[]}"#);
 
-            assert!(metadata_path.exists());
-
-            let metadata_content = fs::read_to_string(metadata_path).unwrap();
-            assert_eq!(metadata_content, r#"{"snapshots":[]}"#);
-
-            // Temporary directory is automatically cleaned up
-        }
-
-        #[test]
-        fn test_take_snapshot() {
-            let test_dir = tempdir().unwrap(); // Use a unique temp directory
-            let test_path = test_dir.path().to_str().unwrap();
-
-            // Initialize the directory for Time Machine
-            initialize_directory(test_path).unwrap();
-
-            // Create some test files
-            let file1 = Path::new(test_path).join("file1.txt");
-            let mut f1 = File::create(&file1).unwrap();
-            writeln!(f1, "Hello, world!").unwrap();
-
-            let file2 = Path::new(test_path).join("file2.txt");
-            let mut f2 = File::create(&file2).unwrap();
-            writeln!(f2, "Time Machine").unwrap();
-
-            // Take a snapshot
-            take_snapshot(test_path).unwrap();
-
-            // Verify metadata.json is updated
-            let metadata_path = Path::new(test_path).join(".timemachine").join("metadata.json");
-            let metadata_content = fs::read_to_string(metadata_path).unwrap();
-            let metadata: SnapshotMetadata = serde_json::from_str(&metadata_content).unwrap();
-
-            assert_eq!(metadata.snapshots.len(), 1);
-            assert_eq!(metadata.snapshots[0].changes, 2);
-
-            // Temporary directory is automatically cleaned up
-        }
+        // Temporary directory is automatically cleaned up
     }
+
+    #[test]
+    fn test_take_snapshot() {
+        let test_dir = tempdir().unwrap(); // Use a unique temp directory
+        let test_path = test_dir.path().to_str().unwrap();
+
+        // Initialize the directory for Time Machine
+        initialize_directory(test_path).unwrap();
+
+        // Create some test files
+        let file1 = Path::new(test_path).join("file1.txt");
+        let mut f1 = File::create(&file1).unwrap();
+        writeln!(f1, "Hello, world!").unwrap();
+
+        let file2 = Path::new(test_path).join("file2.txt");
+        let mut f2 = File::create(&file2).unwrap();
+        writeln!(f2, "Time Machine").unwrap();
+
+        // Take a snapshot
+        take_snapshot(test_path).unwrap();
+
+        // Verify metadata.json is updated
+        let metadata_path = Path::new(test_path)
+            .join(".timemachine")
+            .join("metadata.json");
+        let metadata_content = fs::read_to_string(metadata_path).unwrap();
+        let metadata: SnapshotMetadata = serde_json::from_str(&metadata_content).unwrap();
+
+        assert_eq!(metadata.snapshots.len(), 1);
+        assert_eq!(metadata.snapshots[0].changes, 2);
+
+        // Temporary directory is automatically cleaned up
+    }
+}
