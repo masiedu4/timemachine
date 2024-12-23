@@ -24,7 +24,7 @@ fn main() {
 
     match &cli.command {
         Commands::Init { dir } => match timemachine::initialize_directory(dir) {
-            Ok(_) => eprintln!("Initialization complete with metatada! {}", dir),
+            Ok(_) => eprintln!("Initialization complete with metadata! {}", dir),
             Err(e) => eprintln!("Initialization failed {:?}", e),
         },
         Commands::Snapshot {dir} => match timemachine::take_snapshot(dir) {
