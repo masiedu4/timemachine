@@ -140,7 +140,7 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn compare_snapshots(
+pub fn differentiate_snapshots(
     path: &str,
     snapshot_id1: usize,
     snapshot_id2: usize,
