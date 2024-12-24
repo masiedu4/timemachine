@@ -5,9 +5,22 @@ use std::io::{self, Write};
 use std::path::Path;
 
 fn compute_hash(path: &Path) -> Result<String, std::io::Error> {
-    let mut file = fs::File::open(path)?;
+    let mut file = fs::File::open(path).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Failed to open file '{}': {}", path.display(), e),
+        )
+    })?;
+
     let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher).expect("File copy failed");
+
+    io::copy(&mut file, &mut hasher).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to read file for hashing '{}': {}", path.display(), e),
+        )
+    })?;
+
     let result = hasher.finalize();
     Ok(format!("{:x}", result))
 }
