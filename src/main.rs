@@ -18,7 +18,7 @@ enum Commands {
         #[arg(value_name = "DIRECTORY")]
         dir: String,
     },
-    Compare {
+    Diff {
         #[arg(value_name = "DIRECTORY")]
         dir: String,
         #[arg(value_name = "SNAPSHOT_ID_1")]
@@ -45,11 +45,11 @@ fn main() {
                 dir, e
             ),
         },
-        Commands::Compare {
+        Commands::Diff {
             dir,
             snapshot_id1,
             snapshot_id2,
-        } => match timemachine::compare_snapshots(dir, *snapshot_id1, *snapshot_id2) {
+        } => match timemachine::differentiate_snapshots(dir, *snapshot_id1, *snapshot_id2) {
             Ok(comparison) => {
                 eprintln!(
                     "Comparison between snapshot {} and snapshot {}:",
