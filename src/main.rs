@@ -32,12 +32,18 @@ fn main() {
 
     match &cli.command {
         Commands::Init { dir } => match timemachine::initialize_directory(dir) {
-            Ok(_) => eprintln!("Initialization complete with metadata! {}", dir),
-            Err(e) => eprintln!("Initialization failed {:?}", e),
+            Ok(_) => eprintln!("Initialization complete for {}", dir),
+            Err(e) => eprintln!(
+                "Initialization failed for directory '{}': {}. Please check the directory path and try again.",
+                dir, e
+            )
         },
         Commands::Snapshot { dir } => match timemachine::take_snapshot(dir) {
-            Ok(_) => eprintln!("Snapshot taken succesfully!"),
-            Err(e) => eprintln!("Snapshot failed {}", e),
+            Ok(_) => eprintln!("Snapshot for {} taken successfully!", dir),
+            Err(e) => eprintln!(
+                "Snapshot creation failed for directory '{}': {}. Please ensure the directory is accessible and try again.",
+                dir, e
+            ),
         },
         Commands::Compare {
             dir,
@@ -53,7 +59,10 @@ fn main() {
                 eprintln!("Modified Files: {:?}", comparison.modified_files);
                 eprintln!("Deleted Files: {:?}", comparison.deleted_files);
             }
-            Err(e) => eprintln!("Failed to compare snapshots: {}", e),
+            Err(e) => eprintln!(
+                "Failed to compare snapshots {} and {} in directory '{}': {}. Ensure the snapshots exist and try again.",
+                snapshot_id1, snapshot_id2, dir, e
+            ),
         },
     }
 }

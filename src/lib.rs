@@ -67,15 +67,30 @@ pub fn initialize_directory(path: &str) -> Result<(), std::io::Error> {
 pub fn initialize_metadata(path: &Path) -> Result<(), std::io::Error> {
     let metadata_path = path.join("metadata.json");
 
-    // check if metadata.json exists, if not create an empty one with an empty snapshot json
-
     if !metadata_path.exists() {
         let metadata = SnapshotMetadata {
             snapshots: Vec::new(),
         };
-        let metadata_content = serde_json::to_string(&metadata)?;
-        let mut file = fs::File::create(metadata_path)?;
-        file.write_all(metadata_content.as_bytes())?;
+        let metadata_content = serde_json::to_string(&metadata).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize metadata: {}", e),
+            )
+        })?;
+
+        let mut file = fs::File::create(&metadata_path).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("Failed to create metadata file: {}", e),
+            )
+        })?;
+
+        file.write_all(metadata_content.as_bytes()).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                format!("Failed to write metadata to file: {}", e),
+            )
+        })?;
     }
 
     Ok(())
@@ -86,8 +101,12 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     let metadata_dir = base_path.join(".timemachine");
     let metadata_path = metadata_dir.join("metadata.json");
 
-    // ensure that timestamp directory exisits
+    // ensure that timestamp directory exists
     if !metadata_dir.exists() {
+        eprintln!(
+            "The directory '{}' is not initialized for snapshots. Initializing it now.",
+            dir
+        );
         initialize_directory(base_path.to_str().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path encoding")
         })?)?;
@@ -106,7 +125,6 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     let file_states = collect_file_states(&base_path)?;
 
     // Create a new snapshot entry
-
     let current_timestamp: String = Local::now().to_rfc3339();
     let snapshot = Snapshot {
         id: metadata.snapshots.len() + 1,
@@ -118,7 +136,6 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
     metadata.snapshots.push(snapshot);
     let updated_metadata = serde_json::to_string_pretty(&metadata)?;
     fs::write(metadata_path, updated_metadata)?;
-    println!("Snapshot taken succesfully!");
 
     Ok(())
 }
