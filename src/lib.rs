@@ -1,51 +1,16 @@
 mod utils;
+mod models;
 
-use crate::utils::collect_file_states;
+use utils::collect_file_states;
+use models::{SnapshotMetadata, FileState, ModifiedFileDetail , Snapshot, SnapshotComparison};
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
 
-#[derive(Serialize, Deserialize, Debug)]
-struct FileState {
-    path: String,
-    size: u64,
-    last_modified: String,
-    hash: String,
-}
-#[derive(Serialize, Deserialize, Debug)]
-struct Snapshot {
-    id: usize,
-    timestamp: String,
-    changes: usize,
-    file_states: Vec<FileState>,
-}
 
-#[derive(Serialize, Deserialize, Debug)]
-struct SnapshotMetadata {
-    snapshots: Vec<Snapshot>,
-}
-
-#[derive(Debug)]
-pub struct SnapshotComparison {
-    pub new_files: Vec<String>,
-    pub modified_files: Vec<ModifiedFileDetail>,
-    pub deleted_files: Vec<String>,
-}
-
-#[derive(Debug)]
-pub struct ModifiedFileDetail {
-    pub path: String,
-    pub old_size: u64,
-    pub new_size: u64,
-    pub old_hash: String,
-    pub new_hash: String,
-    pub old_last_modified: String,
-    pub new_last_modified: String,
-}
-
-pub fn initialize_directory(path: &str) -> Result<(), std::io::Error> {
+pub fn initialize_directory(path: &str) -> Result<(), io::Error> {
     let base_path = Path::new(path);
     let metadata_dir = base_path.join(".timemachine");
 
@@ -64,7 +29,7 @@ pub fn initialize_directory(path: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn initialize_metadata(path: &Path) -> Result<(), std::io::Error> {
+pub fn initialize_metadata(path: &Path) -> Result<(), io::Error> {
     let metadata_path = path.join("metadata.json");
 
     if !metadata_path.exists() {
@@ -72,22 +37,22 @@ pub fn initialize_metadata(path: &Path) -> Result<(), std::io::Error> {
             snapshots: Vec::new(),
         };
         let metadata_content = serde_json::to_string(&metadata).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+            io::Error::new(
+                ErrorKind::InvalidData,
                 format!("Failed to serialize metadata: {}", e),
             )
         })?;
 
         let mut file = fs::File::create(&metadata_path).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
+            io::Error::new(
+                ErrorKind::PermissionDenied,
                 format!("Failed to create metadata file: {}", e),
             )
         })?;
 
         file.write_all(metadata_content.as_bytes()).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::WriteZero,
+            io::Error::new(
+                ErrorKind::WriteZero,
                 format!("Failed to write metadata to file: {}", e),
             )
         })?;
@@ -96,7 +61,7 @@ pub fn initialize_metadata(path: &Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
+pub fn take_snapshot(dir: &str) -> io::Result<()> {
     let base_path = Path::new(dir);
     let metadata_dir = base_path.join(".timemachine");
     let metadata_path = metadata_dir.join("metadata.json");
@@ -108,7 +73,7 @@ pub fn take_snapshot(dir: &str) -> std::io::Result<()> {
             dir
         );
         initialize_directory(base_path.to_str().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path encoding")
+            io::Error::new(ErrorKind::InvalidInput, "Invalid path encoding")
         })?)?;
     }
 
@@ -158,7 +123,7 @@ pub fn differentiate_snapshots(
         .iter()
         .find(|s| s.id == snapshot_id1)
         .ok_or_else(|| {
-            std::io::Error::new(
+            io::Error::new(
                 ErrorKind::NotFound,
                 format!("Snapshot ID not found {}", snapshot_id1),
             )
@@ -169,7 +134,7 @@ pub fn differentiate_snapshots(
         .iter()
         .find(|s| s.id == snapshot_id2)
         .ok_or_else(|| {
-            std::io::Error::new(
+            io::Error::new(
                 ErrorKind::NotFound,
                 format!("Snapshot ID not found {}", snapshot_id2),
             )
@@ -326,7 +291,7 @@ mod tests {
         take_snapshot(test_path).unwrap();
 
         // Compare the two snapshots (ID 1 and ID 2)
-        let comparison = compare_snapshots(test_path, 1, 2).unwrap();
+        let comparison = differentiate_snapshots(test_path, 1, 2).unwrap();
 
         // Assert that the comparison is correct
         assert_eq!(comparison.new_files, vec!["file3.txt"]);
