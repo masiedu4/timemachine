@@ -66,7 +66,7 @@ pub fn collect_file_states(base_path: &Path) -> Result<Vec<FileState>, std::io::
 
 mod tests {
     use super::*;
-    use crate::initialize_directory;
+    use crate::initialize_timemachine;
     use std::fs::File;
     use tempfile::tempdir;
 
@@ -93,7 +93,7 @@ mod tests {
         let test_dir = tempdir().unwrap();
         let test_path = test_dir.path().to_str().unwrap();
 
-        initialize_directory(test_path).unwrap();
+        initialize_timemachine(test_path).unwrap();
 
         let file1 = Path::new(test_path).join("file1.txt");
         let mut f1 = File::create(&file1).unwrap();

@@ -4,13 +4,12 @@ mod models;
 use utils::collect_file_states;
 use models::{SnapshotMetadata, FileState, ModifiedFileDetail , Snapshot, SnapshotComparison};
 use chrono::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
 
 
-pub fn initialize_directory(path: &str) -> Result<(), io::Error> {
+pub fn initialize_timemachine(path: &str) -> Result<(), io::Error> {
     let base_path = Path::new(path);
     let metadata_dir = base_path.join(".timemachine");
 
@@ -72,7 +71,7 @@ pub fn take_snapshot(dir: &str) -> io::Result<()> {
             "The directory '{}' is not initialized for snapshots. Initializing it now.",
             dir
         );
-        initialize_directory(base_path.to_str().ok_or_else(|| {
+        initialize_timemachine(base_path.to_str().ok_or_else(|| {
             io::Error::new(ErrorKind::InvalidInput, "Invalid path encoding")
         })?)?;
     }
@@ -209,7 +208,7 @@ mod tests {
         let test_path = test_dir.path().to_str().unwrap();
 
         // Initialize the directory
-        initialize_directory(test_path).unwrap();
+        initialize_timemachine(test_path).unwrap();
 
         // Check if metadata.json exists
         let metadata_path = Path::new(test_path)
@@ -230,7 +229,7 @@ mod tests {
         let test_path = test_dir.path().to_str().unwrap();
 
         // Initialize the directory for Time Machine
-        initialize_directory(test_path).unwrap();
+        initialize_timemachine(test_path).unwrap();
 
         // Create some test files
         let file1 = Path::new(test_path).join("file1.txt");
@@ -264,7 +263,7 @@ mod tests {
         let test_path = test_dir.path().to_str().unwrap();
 
         // Initialize the directory for Time Machine
-        initialize_directory(test_path).unwrap();
+        initialize_timemachine(test_path).unwrap();
 
         // Create some test files
         let file1 = Path::new(test_path).join("file1.txt");

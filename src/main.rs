@@ -31,7 +31,7 @@ fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Init { dir } => match timemachine::initialize_directory(dir) {
+        Commands::Init { dir } => match timemachine::initialize_timemachine(dir) {
             Ok(_) => eprintln!("Initialization complete for {}", dir),
             Err(e) => eprintln!(
                 "Initialization failed for directory '{}': {}. Please check the directory path and try again.",
