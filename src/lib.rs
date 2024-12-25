@@ -1,12 +1,14 @@
 mod core;
 
 use chrono::prelude::*;
-use core::models::{FileState, ModifiedFileDetail, Snapshot, SnapshotComparison, SnapshotMetadata};
+
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
+
 use core::snapshot::collect_file_states;
-use crate::core::snapshot::{create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
+use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata};
+use core::snapshot::{create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
 
 pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
     let root_path = Path::new(base_dir);
