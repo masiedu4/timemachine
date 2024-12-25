@@ -1,12 +1,13 @@
 mod models;
 mod utils;
+mod core;
 
 use chrono::prelude::*;
 use models::{FileState, ModifiedFileDetail, Snapshot, SnapshotComparison, SnapshotMetadata};
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
-use utils::collect_file_states;
+use core::snapshot::collect_file_states;
 
 pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
     let root_path = Path::new(base_dir);
@@ -36,11 +37,11 @@ pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
 
 pub fn take_snapshot(dir: &str) -> io::Result<()> {
     let base_path = Path::new(dir);
-    let metadata_dir = base_path.join(".timemachine");
-    let metadata_path = metadata_dir.join("metadata.json");
+    let metadata_folder = base_path.join(".timemachine");
+    let metadata_file = metadata_folder.join("metadata.json");
 
     // ensure that timestamp directory exists
-    if !metadata_dir.exists() {
+    if !metadata_folder.exists() {
         eprintln!(
             "The directory '{}' is not initialized for snapshots. Initializing it now.",
             dir
@@ -49,30 +50,26 @@ pub fn take_snapshot(dir: &str) -> io::Result<()> {
         initialize_timemachine(&dir)?;
     }
 
-    // Load existing metadata or create a new one
-    let mut metadata: SnapshotMetadata = if metadata_path.exists() {
-        let content = fs::read_to_string(&metadata_path)?;
+    // Load snapshots from metadata.json
+    let mut metadata: SnapshotMetadata = {
+        let content = fs::read_to_string(&metadata_file)?;
         serde_json::from_str(&content)?
-    } else {
-        SnapshotMetadata {
-            snapshots: Vec::new(),
-        }
     };
 
     let file_states = collect_file_states(&base_path)?;
 
-    // Create a new snapshot entry
-    let current_timestamp: String = Local::now().to_rfc3339();
+
     let snapshot = Snapshot {
         id: metadata.snapshots.len() + 1,
-        timestamp: current_timestamp,
+        timestamp: Local::now().to_rfc3339(),
         changes: file_states.len(),
         file_states,
     };
 
+    // update metadata
     metadata.snapshots.push(snapshot);
     let updated_metadata = serde_json::to_string_pretty(&metadata)?;
-    fs::write(metadata_path, updated_metadata)?;
+    fs::write(metadata_file, updated_metadata)?;
 
     Ok(())
 }
