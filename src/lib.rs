@@ -6,6 +6,7 @@ use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
 use core::snapshot::collect_file_states;
+use crate::core::snapshot::{create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
 
 pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
     let root_path = Path::new(base_dir);
@@ -77,82 +78,29 @@ pub fn differentiate_snapshots(
     snapshot_id1: usize,
     snapshot_id2: usize,
 ) -> io::Result<SnapshotComparison> {
-    let base_path = Path::new(path);
-    let metadata_path = base_path.join(".timemachine/metadata.json");
+    let metadata = load_all_snapshots(path)?;
 
-    // Read the metadata file and parse it
-    let metadata_content = fs::read_to_string(metadata_path)?;
-    let metadata: SnapshotMetadata = serde_json::from_str(&metadata_content)?;
+    let snapshot1 = find_snapshot(&metadata, snapshot_id1).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::NotFound,
+            format!("Snapshot ID not found: {}", snapshot_id1),
+        )
+    })?;
 
-    // Find the snapshots by ID
-    let snapshot1 = metadata
-        .snapshots
-        .iter()
-        .find(|s| s.id == snapshot_id1)
-        .ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::NotFound,
-                format!("Snapshot ID not found {}", snapshot_id1),
-            )
-        })?;
+    let snapshot2 = find_snapshot(&metadata, snapshot_id2).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::NotFound,
+            format!("Snapshot ID not found: {}", snapshot_id2),
+        )
+    })?;
 
-    let snapshot2 = metadata
-        .snapshots
-        .iter()
-        .find(|s| s.id == snapshot_id2)
-        .ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::NotFound,
-                format!("Snapshot ID not found {}", snapshot_id2),
-            )
-        })?;
+    let snapshot1_map = create_file_map(&snapshot1.file_states);
+    let snapshot2_map = create_file_map(&snapshot2.file_states);
 
-    // Create a mapping of file paths to their states for both snapshots
-    let snapshot1_file_map: std::collections::HashMap<String, &FileState> = snapshot1
-        .file_states
-        .iter()
-        .map(|fs| (fs.path.clone(), fs))
-        .collect();
+    let new_files = find_new_files(&snapshot2_map, &snapshot1_map);
+    let modified_files = find_modified_files(&snapshot1_map, &snapshot2_map);
+    let deleted_files = find_deleted_files(&snapshot1_map, &snapshot2_map);
 
-    let snapshot2_file_map: std::collections::HashMap<String, &FileState> = snapshot2
-        .file_states
-        .iter()
-        .map(|fs| (fs.path.clone(), fs))
-        .collect();
-
-    let mut new_files = Vec::new();
-    let mut modified_files = Vec::new();
-    let mut deleted_files = Vec::new();
-
-    // 1. Find new files in snapshot2 (files that exist in snapshot2 but not in snapshot1)
-    for (path, file_state2) in &snapshot2_file_map {
-        if let Some(file_state1) = snapshot1_file_map.get(path) {
-            // 2. Check for modified files (same file path, but different hash or size)
-            if file_state1.hash != file_state2.hash || file_state1.size != file_state2.size {
-                modified_files.push(ModifiedFileDetail {
-                    path: path.clone(),
-                    old_size: file_state1.size,
-                    new_size: file_state2.size,
-                    old_hash: file_state1.hash.clone(),
-                    new_hash: file_state2.hash.clone(),
-                    old_last_modified: file_state1.last_modified.clone(),
-                    new_last_modified: file_state2.last_modified.clone(),
-                });
-            }
-        } else {
-            // File exists in snapshot2 but not in snapshot1 (new file)
-            new_files.push(path.clone());
-        }
-    }
-
-    // 3. Find deleted files in snapshot1 (files that exist in snapshot1 but not in snapshot2)
-    for (path, _) in &snapshot1_file_map {
-        if !snapshot2_file_map.contains_key(path) {
-            deleted_files.push(path.clone());
-        }
-    }
-
-    // Return a SnapshotComparison struct with the results
     Ok(SnapshotComparison {
         new_files,
         modified_files,
