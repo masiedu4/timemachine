@@ -45,11 +45,8 @@ pub fn take_snapshot(dir: &str) -> io::Result<()> {
             "The directory '{}' is not initialized for snapshots. Initializing it now.",
             dir
         );
-        initialize_timemachine(
-            base_path
-                .to_str()
-                .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "Invalid path encoding"))?,
-        )?;
+
+        initialize_timemachine(&dir)?;
     }
 
     // Load existing metadata or create a new one
