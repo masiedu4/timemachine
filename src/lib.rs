@@ -1,60 +1,34 @@
-mod utils;
 mod models;
+mod utils;
 
-use utils::collect_file_states;
-use models::{SnapshotMetadata, FileState, ModifiedFileDetail , Snapshot, SnapshotComparison};
 use chrono::prelude::*;
+use models::{FileState, ModifiedFileDetail, Snapshot, SnapshotComparison, SnapshotMetadata};
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
+use utils::collect_file_states;
 
+pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
+    let root_path = Path::new(base_dir);
 
-pub fn initialize_timemachine(path: &str) -> Result<(), io::Error> {
-    let base_path = Path::new(path);
-    let metadata_dir = base_path.join(".timemachine");
+    let timemachine = root_path.join(".timemachine");
 
-    // Create the base directory if it doesn't exist
-    if !base_path.exists() {
-        fs::create_dir_all(base_path)?;
+    // create a new .timemachine folder if it does not exist
+    if !timemachine.exists() {
+        fs::create_dir_all(&timemachine)?;
     }
 
-    if !metadata_dir.exists() {
-        fs::create_dir_all(&metadata_dir)?;
-    }
+    let metadata_file = timemachine.join("metadata.json");
 
-    // initialize metadata
-    initialize_metadata(&metadata_dir)?;
-
-    Ok(())
-}
-
-pub fn initialize_metadata(path: &Path) -> Result<(), io::Error> {
-    let metadata_path = path.join("metadata.json");
-
-    if !metadata_path.exists() {
-        let metadata = SnapshotMetadata {
+    // create a new metadata, a metadata.json file if it does not exist, and write to it
+    if !metadata_file.exists() {
+        let new_metadata = SnapshotMetadata {
             snapshots: Vec::new(),
         };
-        let metadata_content = serde_json::to_string(&metadata).map_err(|e| {
-            io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Failed to serialize metadata: {}", e),
-            )
-        })?;
 
-        let mut file = fs::File::create(&metadata_path).map_err(|e| {
-            io::Error::new(
-                ErrorKind::PermissionDenied,
-                format!("Failed to create metadata file: {}", e),
-            )
-        })?;
+        let content = serde_json::to_string(&new_metadata)?;
 
-        file.write_all(metadata_content.as_bytes()).map_err(|e| {
-            io::Error::new(
-                ErrorKind::WriteZero,
-                format!("Failed to write metadata to file: {}", e),
-            )
-        })?;
+        fs::write(&metadata_file, content.as_bytes())?;
     }
 
     Ok(())
@@ -71,9 +45,11 @@ pub fn take_snapshot(dir: &str) -> io::Result<()> {
             "The directory '{}' is not initialized for snapshots. Initializing it now.",
             dir
         );
-        initialize_timemachine(base_path.to_str().ok_or_else(|| {
-            io::Error::new(ErrorKind::InvalidInput, "Invalid path encoding")
-        })?)?;
+        initialize_timemachine(
+            base_path
+                .to_str()
+                .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "Invalid path encoding"))?,
+        )?;
     }
 
     // Load existing metadata or create a new one
@@ -215,7 +191,6 @@ mod tests {
             .join(".timemachine")
             .join("metadata.json");
 
-        assert!(metadata_path.exists());
 
         let metadata_content = fs::read_to_string(metadata_path).unwrap();
         assert_eq!(metadata_content, r#"{"snapshots":[]}"#);
@@ -300,16 +275,21 @@ mod tests {
         // Assert detailed info for modified file (file1.txt)
         let modified_file = &comparison.modified_files[0];
         assert_eq!(modified_file.path, "file1.txt");
-        assert_eq!(modified_file.old_size, 14);  // Size of "Hello, world!\n"
-        assert_eq!(modified_file.new_size, 22);  // Size of "Hello, updated world!\n"
-        assert_eq!(modified_file.old_hash, "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5");
-        assert_eq!(modified_file.new_hash, "05c9a0cb7e51316bce559640f1cc42d6cf5a8e9c5c870e5f742e2533e669f73d");
-        
+        assert_eq!(modified_file.old_size, 14); // Size of "Hello, world!\n"
+        assert_eq!(modified_file.new_size, 22); // Size of "Hello, updated world!\n"
+        assert_eq!(
+            modified_file.old_hash,
+            "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
+        );
+        assert_eq!(
+            modified_file.new_hash,
+            "05c9a0cb7e51316bce559640f1cc42d6cf5a8e9c5c870e5f742e2533e669f73d"
+        );
+
         // Verify timestamps are present (actual values will vary)
         assert!(!modified_file.old_last_modified.is_empty());
         assert!(!modified_file.new_last_modified.is_empty());
 
         // Temporary directory is automatically cleaned up
     }
-
 }
