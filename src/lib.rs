@@ -110,7 +110,7 @@ pub fn differentiate_snapshots(
     })
 }
 
-#[cfg(test)]
+
 #[cfg(test)]
 mod tests {
     use super::*;
