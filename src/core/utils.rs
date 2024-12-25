@@ -1,23 +1,21 @@
-
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
-pub fn compute_hash(path: &Path) -> Result<String, std::io::Error> {
+pub fn compute_hash(path: &Path) -> io::Result<String> {
     let mut file = fs::File::open(path).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Failed to open file '{}': {}", path.display(), e),
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Failed to open file for hashing: {}", e),
         )
     })?;
 
     let mut hasher = Sha256::new();
-
     io::copy(&mut file, &mut hasher).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to read file for hashing '{}': {}", path.display(), e),
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to read file for hashing: {}", e),
         )
     })?;
 
@@ -25,29 +23,24 @@ pub fn compute_hash(path: &Path) -> Result<String, std::io::Error> {
     Ok(format!("{:x}", result))
 }
 
-
-
 #[cfg(test)]
-
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
 
     #[test]
     fn test_compute_hash() {
-        fs::write("hello.txt", "").unwrap();
-        let path = Path::new("hello.txt");
+        let test_dir = tempdir().unwrap();
+        let test_file = test_dir.path().join("test.txt");
+        let mut file = File::create(&test_file).unwrap();
+        writeln!(file, "Hello, world!").unwrap();
 
-        let hash = match compute_hash(&path) {
-            Ok(hash) => hash,
-            Err(e) => panic!("Hash did not compute {}", e),
-        };
-
-        fs::remove_file("hello.txt").unwrap();
-
+        let hash = compute_hash(&test_file).unwrap();
         assert_eq!(
             hash,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
         );
     }
-
 }
