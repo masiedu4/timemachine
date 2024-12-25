@@ -17,7 +17,7 @@ pub fn load_all_snapshots(path: &str) -> io::Result<SnapshotMetadata> {
     })
 }
 
-pub fn collect_file_states(base_path: &Path) -> Result<Vec<FileState>, std::io::Error> {
+pub fn collect_file_states(base_path: &Path) -> Result<Vec<FileState>, io::Error> {
     let mut file_states = Vec::new();
 
     let metadata_dir = base_path.join(".timemachine");
@@ -40,7 +40,7 @@ pub fn collect_file_states(base_path: &Path) -> Result<Vec<FileState>, std::io::
         let file_state = FileState {
             path: path
                 .strip_prefix(base_path)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+                .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?
                 .to_string_lossy()
                 .to_string(),
             size: metadata.len(),
