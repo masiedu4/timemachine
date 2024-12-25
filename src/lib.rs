@@ -1,9 +1,7 @@
-mod models;
-mod utils;
 mod core;
 
 use chrono::prelude::*;
-use models::{FileState, ModifiedFileDetail, Snapshot, SnapshotComparison, SnapshotMetadata};
+use core::models::{FileState, ModifiedFileDetail, Snapshot, SnapshotComparison, SnapshotMetadata};
 use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::{fs, io};
