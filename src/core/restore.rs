@@ -1,6 +1,6 @@
 use crate::core::models::Snapshot;
 use crate::core::snapshot::{collect_file_states, load_all_snapshots};
-use std::io;
+use std::{fs, io};
 use std::path::Path;
 use sysinfo::{DiskRefreshKind, Disks};
 
@@ -31,6 +31,19 @@ pub fn has_available_space(dir: &str, snapshot: &Snapshot) -> io::Result<bool> {
     let required_space = snapshot.file_states.iter().map(|s| s.size).sum();
 
     Ok(available_space >= required_space)
+}
+
+
+pub fn validate_permissions(dir:&str) -> io::Result<()>{
+    let test_dir = Path::new(dir).join(".timemachine_test");
+    fs::create_dir_all(&test_dir)?;  // Create test directory if it doesn't exist
+    
+    let test_path = test_dir.join("hi.txt");
+    fs::write(&test_path, "Hello World")?; // check write permissions
+    fs::remove_file(&test_path)?;
+    fs::remove_dir(&test_dir)?;  // Clean up test directory
+    
+    Ok(())
 }
 
 #[cfg(test)]
@@ -114,6 +127,37 @@ mod tests {
 
         // Test with unreasonably large snapshot (should fail)
         assert!(!has_available_space(test_path, &large_snapshot)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_permissions() -> io::Result<()> {
+        use std::fs::create_dir_all;
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        // Test with writable directory
+        let test_dir = tempdir()?;
+        let test_path = test_dir.path().to_str().unwrap();
+        assert!(validate_permissions(test_path).is_ok());
+
+        // Test with read-only directory
+        let readonly_dir = tempdir()?;
+        let readonly_path = readonly_dir.path().to_str().unwrap();
+        
+        // Create the .timemachine_test directory first (needed for permission test)
+        let test_dir_path = Path::new(readonly_path).join(".timemachine_test");
+        create_dir_all(&test_dir_path)?;
+        
+        // Make directory read-only (no write permissions)
+        fs::set_permissions(&test_dir_path, Permissions::from_mode(0o444))?;
+        
+        // Should fail with permission denied
+        assert!(validate_permissions(readonly_path).is_err());
+        
+        // Cleanup: restore permissions to allow deletion
+        fs::set_permissions(&test_dir_path, Permissions::from_mode(0o755))?;
 
         Ok(())
     }
