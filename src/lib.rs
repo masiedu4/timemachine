@@ -2,7 +2,7 @@ mod core;
 
 use chrono::prelude::*;
 
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind};
 use std::path::Path;
 use std::{fs, io};
 
