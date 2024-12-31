@@ -17,7 +17,8 @@ pub fn load_all_snapshots(path: &str) -> io::Result<SnapshotMetadata> {
     })
 }
 
-pub fn collect_file_states(base_path: &Path) -> Result<Vec<FileState>, io::Error> {
+pub fn collect_file_states(dir: &str) -> Result<Vec<FileState>, io::Error> {
+    let base_path = Path::new(&dir);
     let mut file_states = Vec::new();
 
     let metadata_dir = base_path.join(".timemachine");
@@ -128,7 +129,7 @@ mod tests {
         let mut f1 = File::create(&file1).unwrap();
         writeln!(f1, "Hello, world!").unwrap();
 
-        let file_states = collect_file_states(Path::new(test_path)).unwrap();
+        let file_states = collect_file_states(test_path).unwrap();
         assert_eq!(file_states.len(), 1);
         assert_eq!(file_states[0].path, "file1.txt");
     }

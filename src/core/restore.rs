@@ -1,12 +1,14 @@
-use crate::core::models::Snapshot;
-use crate::core::snapshot::{collect_file_states, load_all_snapshots};
+use crate::core::models::{FileState, RestoreReport, Snapshot, SnapshotMetadata};
+use crate::core::snapshot::{collect_file_states, find_deleted_files, find_modified_files, find_new_files, load_all_snapshots};
 use std::{fs, io};
+use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::Path;
 use sysinfo::{DiskRefreshKind, Disks};
+use serde_json;
 
 pub fn has_uncommitted_changes(dir: &str) -> io::Result<bool> {
-    let base_dir = Path::new(&dir);
-    let current_files_state = collect_file_states(base_dir)?;
+    let current_files_state = collect_file_states(&dir)?;
     let all_snapshots = load_all_snapshots(dir)?;
 
     if let Some(latest_snapshot) = all_snapshots.snapshots.last() {
@@ -46,6 +48,80 @@ pub fn validate_permissions(dir:&str) -> io::Result<()>{
     Ok(())
 }
 
+
+pub fn generate_restore_report(
+    old_snapshot: &HashMap<String, &FileState>,
+    new_snapshot: &HashMap<String, &FileState>,
+) -> RestoreReport {
+    let added = find_new_files(new_snapshot, old_snapshot);
+    let modified: Vec<String> = find_modified_files(old_snapshot, new_snapshot)
+        .into_iter()
+        .map(|detail| detail.path)
+        .collect();
+    let deleted = find_deleted_files(old_snapshot, new_snapshot);
+
+    // Unchanged files can be derived by excluding modified and added files
+    let unchanged = old_snapshot
+        .keys()
+        .filter(|path| {
+            new_snapshot.contains_key(*path)
+                && !added.contains(path)
+                && !modified.contains(path)
+        })
+        .cloned()
+        .collect();
+
+    RestoreReport {
+        added,
+        modified,
+        deleted,
+        unchanged,
+    }
+}
+
+
+pub fn perform_restore(base_path: &Path, snapshot_id: usize, report: &RestoreReport) -> io::Result<()> {
+    // First validate that the snapshot exists in metadata
+    let metadata_path = base_path.join(".timemachine").join("metadata.json");
+    let metadata_content = fs::read_to_string(&metadata_path)?;
+    let metadata: SnapshotMetadata = serde_json::from_str(&metadata_content)?;
+    
+    let snapshot = metadata.snapshots.iter()
+        .find(|s| s.id == snapshot_id)
+        .ok_or_else(|| io::Error::new(
+            ErrorKind::NotFound,
+            format!("Snapshot {} does not exist. Available snapshots: {}", 
+                snapshot_id,
+                metadata.snapshots.iter()
+                    .map(|s| s.id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        ))?;
+
+    // Now restore files based on the snapshot's file states
+    for file_state in &snapshot.file_states {
+        let target_path = base_path.join(&file_state.path);
+        if report.added.contains(&file_state.path) || report.modified.contains(&file_state.path) {
+            // Create parent directories if they don't exist
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            // Write the file content based on the hash
+            fs::write(&target_path, "Hello World")?; // TODO: Use actual file content
+        }
+    }
+
+    // Handle deletions
+    for path in &report.deleted {
+        let target_path = base_path.join(path);
+        if target_path.exists() {
+            fs::remove_file(&target_path)?;
+        }
+    }
+
+    Ok(())
+}
 #[cfg(test)]
 
 mod tests {
@@ -159,6 +235,118 @@ mod tests {
         // Cleanup: restore permissions to allow deletion
         fs::set_permissions(&test_dir_path, Permissions::from_mode(0o755))?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_restore_report() {
+        use std::collections::HashMap;
+        use chrono::Local;
+
+        let now = Local::now().to_rfc3339();
+
+        // Create sample file states
+        let file1 = FileState {
+            path: "file1.txt".to_string(),
+            hash: "hash1".to_string(),
+            size: 100,
+            last_modified: now.clone(),
+        };
+
+        let file2 = FileState {
+            path: "file2.txt".to_string(),
+            hash: "hash2".to_string(),
+            size: 200,
+            last_modified: now.clone(),
+        };
+
+        let file2_modified = FileState {
+            path: "file2.txt".to_string(),
+            hash: "hash2_modified".to_string(),
+            size: 250,
+            last_modified: now.clone(),
+        };
+
+        let file3 = FileState {
+            path: "file3.txt".to_string(),
+            hash: "hash3".to_string(),
+            size: 300,
+            last_modified: now,
+        };
+
+        // Create old and new snapshots
+        let mut old_snapshot = HashMap::new();
+        old_snapshot.insert("file1.txt".to_string(), &file1);
+        old_snapshot.insert("file2.txt".to_string(), &file2);
+
+        let mut new_snapshot = HashMap::new();
+        new_snapshot.insert("file2.txt".to_string(), &file2_modified);
+        new_snapshot.insert("file3.txt".to_string(), &file3);
+
+        let report = generate_restore_report(&old_snapshot, &new_snapshot);
+
+        assert!(report.deleted.contains(&"file1.txt".to_string()));
+        assert!(report.modified.contains(&"file2.txt".to_string()));
+        assert!(report.added.contains(&"file3.txt".to_string()));
+        assert!(report.unchanged.is_empty());
+    }
+
+    #[test]
+    fn test_perform_restore() -> io::Result<()> {
+        use std::fs::create_dir_all;
+        use serde_json::json;
+        
+        let test_dir = tempdir()?;
+        let base_path = test_dir.path();
+        
+        // Create initial files
+        let file1_path = base_path.join("file1.txt");
+        fs::write(&file1_path, "original content")?;
+        
+        // Create metadata directory and file
+        let metadata_dir = base_path.join(".timemachine");
+        create_dir_all(&metadata_dir)?;
+        
+        // Create metadata with a snapshot
+        let metadata = json!({
+            "snapshots": [{
+                "id": 1,
+                "timestamp": "2024-12-30T00:30:24Z",
+                "changes": 2,
+                "file_states": [{
+                    "path": "file2.txt",
+                    "size": 14,
+                    "last_modified": "1703894824",
+                    "hash": "new_file_hash"
+                }]
+            }]
+        });
+        
+        fs::write(
+            metadata_dir.join("metadata.json"),
+            serde_json::to_string_pretty(&metadata)?
+        )?;
+        
+        // Create restore report
+        let report = RestoreReport {
+            added: vec!["file2.txt".to_string()],
+            modified: vec![],
+            deleted: vec!["file1.txt".to_string()],
+            unchanged: vec![],
+        };
+        
+        // Perform restore
+        perform_restore(base_path, 1, &report)?;
+        
+        // Verify results
+        assert!(!file1_path.exists(), "file1.txt should be deleted");
+        let file2_path = base_path.join("file2.txt");
+        assert!(file2_path.exists(), "file2.txt should be created");
+        assert_eq!(
+            fs::read_to_string(&file2_path)?,
+            "Hello World" // TODO: Update this when we implement actual file content restoration
+        );
+        
         Ok(())
     }
 }
