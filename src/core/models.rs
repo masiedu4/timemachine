@@ -6,6 +6,7 @@ pub struct FileState {
     pub size: u64,
     pub last_modified: String,
     pub hash: String,
+    pub content: Option<Vec<u8>>,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Snapshot {
@@ -13,6 +14,7 @@ pub struct Snapshot {
     pub timestamp: String,
     pub changes: usize,
     pub file_states: Vec<FileState>,
+
 }
 
 #[derive(Serialize, Deserialize, Debug)]
