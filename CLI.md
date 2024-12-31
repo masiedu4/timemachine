@@ -4,6 +4,21 @@
 
 TimeMachine is a command-line tool for creating and managing directory snapshots. It provides efficient file versioning with features like deduplication, change tracking, and point-in-time restoration.
 
+## Installation
+
+### Using Homebrew (recommended for macOS)
+```bash
+# Install
+brew tap masiedu4/timemachine
+brew install masiedu4/timemachine/timemachine
+
+# Update
+brew update
+brew upgrade timemachine
+```
+
+For other installation methods, see the [README](README.md).
+
 ## Global Usage
 
 ```bash
@@ -24,7 +39,11 @@ timemachine init <DIRECTORY>
 
 **Example:**
 ```bash
+# Initialize a project directory
 timemachine init ~/projects/my-app
+
+# Initialize current directory
+timemachine init .
 ```
 
 ### snapshot
@@ -39,7 +58,11 @@ timemachine snapshot <DIRECTORY>
 
 **Example:**
 ```bash
+# Take a snapshot of a project
 timemachine snapshot ~/projects/my-app
+
+# Take a snapshot of current directory
+timemachine snapshot .
 ```
 
 ### list
@@ -74,7 +97,11 @@ timemachine status <DIRECTORY>
 
 **Example:**
 ```bash
+# Check status of a project
 timemachine status ~/projects/my-app
+
+# Check status of current directory
+timemachine status .
 ```
 
 ### diff
@@ -91,7 +118,11 @@ timemachine diff <DIRECTORY> <SNAPSHOT_ID_1> <SNAPSHOT_ID_2>
 
 **Example:**
 ```bash
+# Compare snapshots 1 and 2
 timemachine diff ~/projects/my-app 1 2
+
+# Compare current directory snapshots
+timemachine diff . 1 2
 ```
 
 ### restore
@@ -108,11 +139,14 @@ timemachine restore <DIRECTORY> <SNAPSHOT_ID> [--dry-run]
 
 **Examples:**
 ```bash
-# Preview changes
+# Preview changes (recommended)
 timemachine restore ~/projects/my-app 2 --dry-run
 
 # Perform actual restore
 timemachine restore ~/projects/my-app 2
+
+# Restore current directory
+timemachine restore . 2
 ```
 
 ### delete
@@ -129,10 +163,10 @@ timemachine delete <DIRECTORY> <SNAPSHOT_ID> [--cleanup]
 
 **Examples:**
 ```bash
-# Delete snapshot
+# Delete a snapshot
 timemachine delete ~/projects/my-app 2
 
-# Delete snapshot and clean up unused content
+# Delete and clean up unused content
 timemachine delete ~/projects/my-app 2 --cleanup
 ```
 
@@ -177,6 +211,7 @@ Common error scenarios:
 1. **Regular Snapshots**
    - Take snapshots at meaningful points (after major changes)
    - Use descriptive commit messages
+   - Regular snapshots make restoration easier
 
 2. **Space Management**
    - Regularly clean up old snapshots
