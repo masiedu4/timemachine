@@ -45,3 +45,20 @@ pub struct RestoreReport {
     pub deleted: Vec<String>,
     pub unchanged: Vec<String>,
 }
+
+
+pub struct SnapshotListInfo {
+    pub id: usize,
+    pub timestamp: String,
+    pub changes: usize,
+    pub total_size: u64,
+}
+
+pub struct StatusInfo {
+    pub has_uncommitted_changes: bool,
+    pub modified_files: Vec<String>,
+    pub new_files: Vec<String>,
+    pub deleted_files: Vec<String>,
+    pub available_space: u64,
+    pub latest_snapshot_id: Option<usize>,
+}
