@@ -9,6 +9,9 @@ use std::{fs, io};
 use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata,RestoreReport};
 use core::snapshot::{collect_file_states, create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
 use core::restore::{validate_permissions,generate_restore_report, has_available_space, has_uncommitted_changes, perform_restore};
+use sysinfo::{DiskRefreshKind, Disks};
+use crate::core::content::ContentStore;
+use crate::core::models::{SnapshotListInfo, StatusInfo};
 
 pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
     let root_path = Path::new(base_dir);
@@ -163,12 +166,115 @@ pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool) -> io::Res
     Ok(report)
 }
 
+pub fn list_snapshots(dir: &str, detailed: bool) -> io::Result<Vec<SnapshotListInfo>> {
+    let metadata = load_all_snapshots(dir)?;
+    
+    let mut snapshot_info = Vec::new();
+    for snapshot in metadata.snapshots {
+        let total_size = if detailed {
+            snapshot.file_states.iter().map(|s| s.size).sum()
+        } else {
+            0
+        };
+        
+        snapshot_info.push(SnapshotListInfo {
+            id: snapshot.id,
+            timestamp: snapshot.timestamp,
+            changes: snapshot.changes,
+            total_size,
+        });
+    }
+    
+    Ok(snapshot_info)
+}
+
+pub fn get_status(dir: &str) -> io::Result<StatusInfo> {
+    let metadata = load_all_snapshots(dir)?;
+    let latest_snapshot = metadata.snapshots.last();
+    let latest_snapshot_id = latest_snapshot.map(|s| s.id);
+    
+    let current_states = collect_file_states(dir)?;
+    let mut status = StatusInfo {
+        has_uncommitted_changes: false,
+        modified_files: Vec::new(),
+        new_files: Vec::new(),
+        deleted_files: Vec::new(),
+        available_space: 0,
+        latest_snapshot_id,
+    };
+    
+    // Get available space using sysinfo
+    let base_dir = Path::new(dir);
+    let abs_path = base_dir.canonicalize()?;
+    let disks = Disks::new_with_refreshed_list_specifics(DiskRefreshKind::everything());
+    status.available_space = disks
+        .iter()
+        .find(|disk| abs_path.starts_with(disk.mount_point()))
+        .map(|disk| disk.available_space())
+        .unwrap_or(0);
+    
+    if let Some(snapshot) = latest_snapshot {
+        let current_map = create_file_map(&current_states);
+        let snapshot_map = create_file_map(&snapshot.file_states);
+        
+        status.modified_files = find_modified_files(&snapshot_map, &current_map)
+            .into_iter()
+            .map(|m| m.path)
+            .collect();
+        status.new_files = find_new_files(&current_map, &snapshot_map);
+        status.deleted_files = find_deleted_files(&snapshot_map, &current_map);
+        
+        status.has_uncommitted_changes = !status.modified_files.is_empty() 
+            || !status.new_files.is_empty() 
+            || !status.deleted_files.is_empty();
+    }
+    
+    Ok(status)
+}
+
+pub fn delete_snapshot(dir: &str, snapshot_id: usize, cleanup: bool) -> io::Result<()> {
+    let base_path = Path::new(dir);
+    let metadata_path = base_path.join(".timemachine").join("metadata.json");
+    
+    // Load and update metadata
+    let mut metadata: SnapshotMetadata = {
+        let content = fs::read_to_string(&metadata_path)?;
+        serde_json::from_str(&content)?
+    };
+    
+    // Find and remove the snapshot
+    let snapshot_index = metadata.snapshots
+        .iter()
+        .position(|s| s.id == snapshot_id)
+        .ok_or_else(|| io::Error::new(
+            ErrorKind::NotFound,
+            format!("Snapshot {} not found", snapshot_id)
+        ))?;
+    
+    metadata.snapshots.remove(snapshot_index);
+    
+    // Save updated metadata
+    let updated_content = serde_json::to_string_pretty(&metadata)?;
+    fs::write(&metadata_path, updated_content)?;
+    
+    // Clean up unused content if requested
+    if cleanup {
+        let store = ContentStore::new(base_path);
+        let used_hashes: Vec<String> = metadata.snapshots
+            .iter()
+            .flat_map(|s| s.file_states.iter().map(|f| f.hash.clone()))
+            .collect();
+        store.cleanup(&used_hashes)?;
+    }
+    
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-    use std::fs::File;
+    use std::fs::{File, OpenOptions};
     use std::io::Write;
     use std::path::Path;
     use tempfile::tempdir;
@@ -341,6 +447,139 @@ mod tests {
 
         assert!(file1_path.exists());
         assert_eq!(fs::read_to_string(&file1_path)?, "file1 content");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_list_snapshots() -> io::Result<()> {
+        let test_dir = tempdir()?;
+        let dir = test_dir.path().to_str().unwrap();
+
+        // Initialize directory
+        initialize_timemachine(dir)?;
+
+        // Create some test files
+        let file1 = Path::new(dir).join("file1.txt");
+        let mut f1 = File::create(&file1)?;
+        writeln!(f1, "Hello, world!")?;
+
+        // Take first snapshot
+        take_snapshot(dir)?;
+
+        // Create another file
+        let file2 = Path::new(dir).join("file2.txt");
+        let mut f2 = File::create(&file2)?;
+        writeln!(f2, "Second file")?;
+
+        // Take second snapshot
+        take_snapshot(dir)?;
+
+        // Test basic listing
+        let snapshots = list_snapshots(dir, false)?;
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[0].id, 1);
+        assert_eq!(snapshots[1].id, 2);
+        assert_eq!(snapshots[0].changes, 1); // First snapshot has 1 file
+        assert_eq!(snapshots[1].changes, 2); // Second snapshot has 2 files
+        assert_eq!(snapshots[0].total_size, 0); // Not detailed
+
+        // Test detailed listing
+        let detailed = list_snapshots(dir, true)?;
+        assert!(detailed[0].total_size > 0);
+        assert!(detailed[1].total_size > 0);
+        assert!(detailed[1].total_size > detailed[0].total_size); // Second snapshot should have more total size
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_status() -> io::Result<()> {
+        let test_dir = tempdir()?;
+        let dir = test_dir.path().to_str().unwrap();
+
+        // Initialize directory
+        initialize_timemachine(dir)?;
+
+        // Test status with no snapshots
+        let status = get_status(dir)?;
+        assert!(status.available_space > 0);
+        assert!(status.latest_snapshot_id.is_none());
+        assert!(!status.has_uncommitted_changes);
+
+        // Create a file and take snapshot
+        let file1 = Path::new(dir).join("file1.txt");
+        let mut f1 = File::create(&file1)?;
+        writeln!(f1, "Initial content")?;
+        take_snapshot(dir)?;
+
+        // Test status with no changes
+        let status = get_status(dir)?;
+        assert_eq!(status.latest_snapshot_id, Some(1));
+        assert!(!status.has_uncommitted_changes);
+        assert!(status.modified_files.is_empty());
+        assert!(status.new_files.is_empty());
+        assert!(status.deleted_files.is_empty());
+
+        // Modify existing file
+        let mut f1 = OpenOptions::new().write(true).open(&file1)?;
+        writeln!(f1, "Modified content")?;
+
+        // Create new file
+        let file2 = Path::new(dir).join("file2.txt");
+        let mut f2 = File::create(&file2)?;
+        writeln!(f2, "New file")?;
+
+        // Delete first file
+        fs::remove_file(&file1)?;
+
+        // Test status with changes
+        let status = get_status(dir)?;
+        assert!(status.has_uncommitted_changes);
+        assert_eq!(status.new_files.len(), 1);
+        assert_eq!(status.deleted_files.len(), 1);
+        assert!(status.new_files.contains(&"file2.txt".to_string()));
+        assert!(status.deleted_files.contains(&"file1.txt".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_snapshot() -> io::Result<()> {
+        let test_dir = tempdir()?;
+        let dir = test_dir.path().to_str().unwrap();
+
+        // Initialize directory
+        initialize_timemachine(dir)?;
+
+        // Create files and take snapshots
+        let file1 = Path::new(dir).join("file1.txt");
+        let mut f1 = File::create(&file1)?;
+        writeln!(f1, "File 1")?;
+        take_snapshot(dir)?;
+
+        let file2 = Path::new(dir).join("file2.txt");
+        let mut f2 = File::create(&file2)?;
+        writeln!(f2, "File 2")?;
+        take_snapshot(dir)?;
+
+        // Verify initial state
+        let initial_snapshots = list_snapshots(dir, false)?;
+        assert_eq!(initial_snapshots.len(), 2);
+
+        // Test deleting non-existent snapshot
+        assert!(delete_snapshot(dir, 999, false).is_err());
+
+        // Test deleting first snapshot without cleanup
+        delete_snapshot(dir, 1, false)?;
+        let remaining = list_snapshots(dir, false)?;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, 2);
+
+        // Test deleting last snapshot with cleanup
+        delete_snapshot(dir, 2, true)?;
+        let final_snapshots = list_snapshots(dir, false)?;
+        assert_eq!(final_snapshots.len(), 0);
 
         Ok(())
     }
