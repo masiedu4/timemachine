@@ -1,5 +1,5 @@
 use crate::core::models::{FileState, ModifiedFileDetail, Snapshot, SnapshotMetadata};
-use crate::core::utils::compute_hash;
+use crate::core::utils::compute_file_hash;
 
 use std::{fs, io};
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ pub fn collect_file_states(dir: &str) -> Result<Vec<FileState>, io::Error> {
                 .to_string(),
             size: metadata.len(),
             last_modified: modified_time.to_string(),
-            hash: compute_hash(&path)?,
+            hash: compute_file_hash(&path)?,
         };
 
         file_states.push(file_state);

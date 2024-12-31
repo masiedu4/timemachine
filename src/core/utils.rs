@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-pub fn compute_hash(path: &Path) -> io::Result<String> {
+pub fn compute_file_hash(path: &Path) -> io::Result<String> {
     let mut file = fs::File::open(path).map_err(|e| {
         io::Error::new(
             io::ErrorKind::NotFound,
@@ -31,13 +31,13 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn test_compute_hash() {
+    fn test_compute_file_hash() {
         let test_dir = tempdir().unwrap();
         let test_file = test_dir.path().join("test.txt");
         let mut file = File::create(&test_file).unwrap();
         writeln!(file, "Hello, world!").unwrap();
 
-        let hash = compute_hash(&test_file).unwrap();
+        let hash = compute_file_hash(&test_file).unwrap();
         assert_eq!(
             hash,
             "d9014c4624844aa5bac314773d6b689ad467fa4e1d1a50a1b8a99d5a95f72ff5"
