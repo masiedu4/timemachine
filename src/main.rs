@@ -26,7 +26,17 @@ enum Commands {
         #[arg(value_name = "SNAPSHOT_ID_2")]
         snapshot_id2: usize,
     },
+    Restore {
+        #[arg(value_name = "DIRECTORY")]
+        dir: String,
+        #[arg(value_name = "SNAPSHOT_ID")]
+        snapshot_id: usize,
+        /// Perform a trial run with no changes made
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
 }
+
 fn main() {
     let cli = Cli::parse();
 
@@ -64,5 +74,37 @@ fn main() {
                 snapshot_id1, snapshot_id2, dir, e
             ),
         },
+        Commands::Restore {
+            dir,
+            snapshot_id,
+            dry_run,
+        } => {
+            // Now proceed with restore
+            match timemachine::restore_snapshot(dir, *snapshot_id, *dry_run) {
+                Ok(report) => {
+                    if report.added.is_empty() && report.modified.is_empty() && report.deleted.is_empty() {
+                        eprintln!("No changes needed - files are already at the target state.");
+                    } else {
+                        eprintln!("Changes to be made:");
+                        if !report.added.is_empty() {
+                            eprintln!("Files to add: {:?}", report.added);
+                        }
+                        if !report.modified.is_empty() {
+                            eprintln!("Files to modify: {:?}", report.modified);
+                        }
+                        if !report.deleted.is_empty() {
+                            eprintln!("Files to delete: {:?}", report.deleted);
+                        }
+                    }
+
+                    if *dry_run {
+                        eprintln!("Dry run complete. No changes were made.");
+                    } else {
+                        eprintln!("Restore completed successfully!");
+                    }
+                }
+                Err(e) => eprintln!("Error: {}", e),
+            }
+        }
     }
 }

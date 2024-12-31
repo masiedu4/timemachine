@@ -37,3 +37,10 @@ pub struct ModifiedFileDetail {
     pub old_last_modified: String,
     pub new_last_modified: String,
 }
+
+pub struct RestoreReport {
+    pub added: Vec<String>,
+    pub modified: Vec<String>,
+    pub deleted: Vec<String>,
+    pub unchanged: Vec<String>,
+}

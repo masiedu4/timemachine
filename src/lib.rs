@@ -6,9 +6,9 @@ use std::io::{ErrorKind};
 use std::path::Path;
 use std::{fs, io};
 
-use core::snapshot::collect_file_states;
-use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata};
-use core::snapshot::{create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
+use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata,RestoreReport};
+use core::snapshot::{collect_file_states, create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
+use core::restore::{validate_permissions,generate_restore_report, has_available_space, has_uncommitted_changes, perform_restore};
 
 pub fn initialize_timemachine(base_dir: &str) -> Result<(), io::Error> {
     let root_path = Path::new(base_dir);
@@ -57,7 +57,7 @@ pub fn take_snapshot(dir: &str) -> io::Result<()> {
         serde_json::from_str(&content)?
     };
 
-    let file_states = collect_file_states(&base_path)?;
+    let file_states = collect_file_states(&dir)?;
 
 
     let snapshot = Snapshot {
@@ -108,6 +108,59 @@ pub fn differentiate_snapshots(
         modified_files,
         deleted_files,
     })
+}
+
+
+
+pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool) -> io::Result<RestoreReport> {
+    validate_permissions(dir)?;
+
+    let base_path = Path::new(dir);
+    
+    // Step 1: Load snapshots and find the target snapshot
+    let all_snapshots = load_all_snapshots(dir)?;
+    let snapshot = find_snapshot(&all_snapshots, snapshot_id)
+        .ok_or_else(|| io::Error::new(
+            ErrorKind::NotFound, 
+            format!("Snapshot {} does not exist. Available snapshots: {}", 
+                snapshot_id,
+                all_snapshots.snapshots.iter()
+                    .map(|s| s.id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        ))?;
+
+    // Step 2: Check for uncommitted changes
+    if has_uncommitted_changes(dir)? {
+        return Err(io::Error::new(
+            ErrorKind::Other,
+            "Uncommitted changes detected. Use --force to override or take a new snapshot.",
+        ));
+    }
+
+    // Step 3: Ensure sufficient disk space
+    if !has_available_space(dir, snapshot)? {
+        return Err(io::Error::new(
+            ErrorKind::Other,
+            "Insufficient disk space for restoration.",
+        ));
+    }
+
+    // Step 4: Generate restore report
+    let current_states = collect_file_states(dir)?;
+    let current_map = create_file_map(&current_states);
+    let snapshot_map = create_file_map(&snapshot.file_states);
+    let report = generate_restore_report(&current_map, &snapshot_map);
+
+    if dry_run {
+        return Ok(report); // Dry run; do not apply changes
+    }
+
+    // Step 5: Execute restore operations
+    perform_restore(base_path, snapshot_id, &report)?;
+
+    Ok(report)
 }
 
 
