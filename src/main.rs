@@ -1,8 +1,17 @@
 use clap::Parser;
+use clap::CommandFactory;
 use timemachine;
+use clap_complete::{generate_to, shells::*};
+use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "timemachine", version = "0.1.0", author = "Michael Asiedu")]
+#[command(
+    name = "timemachine",
+    version = "0.1.0",
+    author = "Michael Asiedu",
+    about = "A version control system for directories that helps track and manage file changes over time",
+    long_about = "TimeMachine is a powerful file versioning tool that creates snapshots of directories and allows you to track, restore, and manage changes over time. It provides an easy way to backup and version control any directory on your system."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -10,51 +19,200 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
+    #[command(
+        about = "Initialize a directory for version tracking",
+        long_about = "Prepares a directory for version tracking by creating necessary metadata structures. This command must be run before using other commands on a directory."
+    )]
     Init {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory to initialize",
+            long_help = "Absolute or relative path to the directory that will be tracked. The directory must exist and be writable."
+        )]
         dir: String,
     },
+
+    #[command(
+        about = "Create a new snapshot of the current directory state",
+        long_about = "Takes a snapshot of the current state of the directory, including all files and their contents. Each snapshot is assigned a unique ID that can be used for future operations."
+    )]
     Snapshot {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory to snapshot",
+            long_help = "Path to an initialized directory. The directory must have been previously initialized using the init command."
+        )]
         dir: String,
     },
+
+    #[command(
+        about = "List all snapshots for a directory",
+        long_about = "Displays a list of all snapshots taken for the specified directory. When used with --detailed, shows additional information like space usage and file counts."
+    )]
     List {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory",
+            long_help = "Path to an initialized directory whose snapshots you want to list."
+        )]
         dir: String,
-        /// Show detailed information including space usage
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Show detailed information including space usage",
+            long_help = "When enabled, shows additional information for each snapshot including: total size, number of files, and space usage statistics."
+        )]
         detailed: bool,
     },
+
+    #[command(
+        about = "Show the current status of a directory",
+        long_about = "Displays the current state of the directory compared to its last snapshot, showing modified, added, and deleted files. Also shows available space and latest snapshot information."
+    )]
     Status {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory to check status",
+            long_help = "Path to an initialized directory. Shows changes made since the last snapshot, if any."
+        )]
         dir: String,
     },
+
+    #[command(
+        about = "Delete a specific snapshot",
+        long_about = "Removes a snapshot from the directory's history. When used with --cleanup, also removes any stored file contents that are no longer referenced by other snapshots."
+    )]
     Delete {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory",
+            long_help = "Path to an initialized directory containing the snapshot to delete."
+        )]
         dir: String,
-        #[arg(value_name = "SNAPSHOT_ID")]
+        #[arg(
+            value_name = "SNAPSHOT_ID",
+            help = "ID of the snapshot to delete",
+            long_help = "Numeric ID of the snapshot to remove. Use the list command to see available snapshot IDs."
+        )]
         snapshot_id: usize,
-        /// Clean up unused content after deletion
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Clean up unused content after deletion",
+            long_help = "When enabled, removes stored file contents that are no longer referenced by any remaining snapshots, freeing up space."
+        )]
         cleanup: bool,
     },
+
+    #[command(
+        about = "Compare two snapshots",
+        long_about = "Shows the differences between two snapshots, including added, modified, and deleted files. Useful for understanding changes between different points in time."
+    )]
     Diff {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory",
+            long_help = "Path to an initialized directory containing the snapshots to compare."
+        )]
         dir: String,
-        #[arg(value_name = "SNAPSHOT_ID_1")]
+        #[arg(
+            value_name = "SNAPSHOT_ID_1",
+            help = "ID of the first snapshot",
+            long_help = "Numeric ID of the first snapshot for comparison. Use the list command to see available snapshot IDs."
+        )]
         snapshot_id1: usize,
-        #[arg(value_name = "SNAPSHOT_ID_2")]
+        #[arg(
+            value_name = "SNAPSHOT_ID_2",
+            help = "ID of the second snapshot",
+            long_help = "Numeric ID of the second snapshot for comparison. Use the list command to see available snapshot IDs."
+        )]
         snapshot_id2: usize,
     },
+
+    #[command(
+        about = "Restore directory to a specific snapshot state",
+        long_about = "Restores the directory to the state it was in at a specific snapshot. Use --dry-run to preview changes without applying them."
+    )]
     Restore {
-        #[arg(value_name = "DIRECTORY")]
+        #[arg(
+            value_name = "DIRECTORY",
+            help = "Path to the directory to restore",
+            long_help = "Path to an initialized directory that you want to restore to a previous state."
+        )]
         dir: String,
-        #[arg(value_name = "SNAPSHOT_ID")]
+        #[arg(
+            value_name = "SNAPSHOT_ID",
+            help = "ID of the snapshot to restore to",
+            long_help = "Numeric ID of the snapshot to restore to. Use the list command to see available snapshot IDs."
+        )]
         snapshot_id: usize,
-        /// Perform a trial run with no changes made
-        #[arg(long, default_value_t = false)]
+        #[arg(
+            long,
+            default_value_t = false,
+            help = "Perform a trial run with no changes made",
+            long_help = "When enabled, shows what would be changed by the restore operation without actually making any changes. Useful for previewing the effects of a restore."
+        )]
         dry_run: bool,
     },
+
+    #[command(
+        hide = true,
+        about = "Generate shell completions",
+        long_about = "Generate shell completion scripts for various shells"
+    )]
+    Completions {
+        #[arg(
+            value_name = "SHELL",
+            help = "Shell to generate completions for",
+            long_help = "Supported shells: bash, zsh, fish, powershell"
+        )]
+        shell: Option<String>,
+    },
+}
+
+fn generate_completions(shell_name: Option<String>) -> std::io::Result<()> {
+    let shells = vec!["bash", "zsh", "fish", "powershell"];
+    let out_dir = PathBuf::from("completions");
+    std::fs::create_dir_all(&out_dir)?;
+    
+    let mut cmd = Cli::command();
+    let bin_name = cmd.get_name().to_string();
+    
+    match shell_name {
+        Some(shell) => {
+            match shell.as_str() {
+                "bash" => {
+                    generate_to(Bash, &mut cmd, &bin_name, &out_dir)?;
+                    Ok(())
+                },
+                "zsh" => {
+                    generate_to(Zsh, &mut cmd, &bin_name, &out_dir)?;
+                    Ok(())
+                },
+                "fish" => {
+                    generate_to(Fish, &mut cmd, &bin_name, &out_dir)?;
+                    Ok(())
+                },
+                "powershell" => {
+                    generate_to(PowerShell, &mut cmd, &bin_name, &out_dir)?;
+                    Ok(())
+                },
+                _ => {
+                    eprintln!("Unsupported shell. Available shells: {}", shells.join(", "));
+                    Ok(())
+                }
+            }
+        },
+        None => {
+            // Generate for all shells
+            generate_to(Bash, &mut cmd, &bin_name, &out_dir)?;
+            generate_to(Zsh, &mut cmd, &bin_name, &out_dir)?;
+            generate_to(Fish, &mut cmd, &bin_name, &out_dir)?;
+            generate_to(PowerShell, &mut cmd, &bin_name, &out_dir)?;
+            println!("Generated completion scripts in ./completions/");
+            Ok(())
+        }
+    }
 }
 
 fn main() {
@@ -195,6 +353,11 @@ fn main() {
                 "Failed to restore snapshot {} in directory '{}': {}",
                 snapshot_id, dir, e
             ),
+        },
+        Commands::Completions { shell } => {
+            if let Err(e) = generate_completions(shell.clone()) {
+                eprintln!("Failed to generate completions: {}", e);
+            }
         },
     }
 }

@@ -1,9 +1,9 @@
+use crate::core::utils::compute_file_hash;
+
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use zstd::stream::{copy_encode, copy_decode};
-use sha2::{Digest, Sha256};
-use crate::core::utils::compute_file_hash;
+use zstd::stream::{copy_decode, copy_encode};
 
 pub struct ContentStore {
     base_path: PathBuf,
@@ -71,24 +71,24 @@ impl ContentStore {
         Ok(())
     }
 
-    pub fn verify_content(&self, hash: &str) -> io::Result<bool> {
-        let content_path = self.base_path.join(hash);
-        if !content_path.exists() {
-            return Ok(false);
-        }
-
-        // Decompress and verify hash
-        let mut temp = Vec::new();
-        let source = File::open(content_path)?;
-        let mut decoder = zstd::Decoder::new(source)?;
-        decoder.read_to_end(&mut temp)?;
-
-        let mut hasher = Sha256::new();
-        hasher.update(&temp);
-        let computed_hash = format!("{:x}", hasher.finalize());
-
-        Ok(computed_hash == hash)
-    }
+    // pub fn verify_content(&self, hash: &str) -> io::Result<bool> {
+    //     let content_path = self.base_path.join(hash);
+    //     if !content_path.exists() {
+    //         return Ok(false);
+    //     }
+    //
+    //     // Decompress and verify hash
+    //     let mut temp = Vec::new();
+    //     let source = File::open(content_path)?;
+    //     let mut decoder = zstd::Decoder::new(source)?;
+    //     decoder.read_to_end(&mut temp)?;
+    //
+    //     let mut hasher = Sha256::new();
+    //     hasher.update(&temp);
+    //     let computed_hash = format!("{:x}", hasher.finalize());
+    //
+    //     Ok(computed_hash == hash)
+    // }
 }
 
 #[cfg(test)]

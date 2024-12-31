@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: timemachine
+            asset_name: timemachine-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: timemachine
+            asset_name: timemachine-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: timemachine.exe
+            asset_name: timemachine-windows-amd64.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: timemachine
+            asset_name: timemachine-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: timemachine
+            asset_name: timemachine-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      
+      - name: Generate Shell Completions
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          mkdir -p completions
+          ./target/${{ matrix.target }}/release/timemachine completions
+      
+      - name: Package Binary and Completions
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            7z a ../../../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          else
+            if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]]; then
+              cp -r ../../../completions .
+              tar -czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }} completions/
+            else
+              tar -czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+            fi
+          fi
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ matrix.asset_name }}.*
+          body: |
+            ## TimeMachine ${{ github.ref_name }}
+            
+            ### Installation
+            
+            #### macOS
+            ```bash
+            # Intel Mac
+            curl -LO https://github.com/masiedu4/timemachine/releases/download/${{ github.ref_name }}/timemachine-macos-amd64.tar.gz
+            
+            # Apple Silicon Mac
+            curl -LO https://github.com/masiedu4/timemachine/releases/download/${{ github.ref_name }}/timemachine-macos-arm64.tar.gz
+            ```
+            
+            #### Linux
+            ```bash
+            # x86_64
+            curl -LO https://github.com/masiedu4/timemachine/releases/download/${{ github.ref_name }}/timemachine-linux-amd64.tar.gz
+            
+            # ARM64
+            curl -LO https://github.com/masiedu4/timemachine/releases/download/${{ github.ref_name }}/timemachine-linux-arm64.tar.gz
+            ```
+            
+            #### Windows
+            Download the appropriate zip file for your system from the assets below.
+            
+            ### SHA256 Checksums
+            ```
+            ${{ env.CHECKSUMS }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
