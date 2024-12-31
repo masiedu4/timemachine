@@ -114,4 +114,4 @@ jobs:
             ${{ env.CHECKSUMS }}
             ```
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.NEW_GITHUB_TOKEN }}
