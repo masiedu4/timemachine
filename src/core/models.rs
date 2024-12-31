@@ -1,20 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FileState {
     pub path: String,
     pub size: u64,
     pub last_modified: String,
     pub hash: String,
-    pub content: Option<Vec<u8>>,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Snapshot {
     pub id: usize,
     pub timestamp: String,
     pub changes: usize,
     pub file_states: Vec<FileState>,
-
 }
 
 #[derive(Serialize, Deserialize, Debug)]

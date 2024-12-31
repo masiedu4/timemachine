@@ -2,7 +2,7 @@ mod core;
 
 use chrono::prelude::*;
 
-use std::io::{ErrorKind};
+use std::io::ErrorKind;
 use std::path::Path;
 use std::{fs, io};
 
@@ -135,7 +135,7 @@ pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool) -> io::Res
     if has_uncommitted_changes(dir)? {
         return Err(io::Error::new(
             ErrorKind::Other,
-            "Uncommitted changes detected. Use --force to override or take a new snapshot.",
+            "Uncommitted changes detected. Take another snapshot before proceeding to restore.",
         ));
     }
 
@@ -172,6 +172,8 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
     use tempfile::tempdir;
+    use crate::core::content::ContentStore;
+    use crate::core::models::FileState;
 
     #[test]
     fn test_initialize_metadata_directory() {
@@ -286,5 +288,60 @@ mod tests {
         assert!(!modified_file.new_last_modified.is_empty());
 
         // Temporary directory is automatically cleaned up
+    }
+
+    #[test]
+    fn test_perform_restore_with_content() -> io::Result<()> {
+        let test_dir = tempdir()?;
+        let base_path = test_dir.path();
+
+        // Create initial file
+        let file1_path = base_path.join("file1.txt");
+        fs::write(&file1_path, "file1 content")?;
+
+        // Initialize content store and store the file
+        let store = ContentStore::new(base_path);
+        store.init()?;
+        let hash = store.store_file(&file1_path)?;
+
+        // Create metadata with the actual hash
+        let metadata = SnapshotMetadata {
+            snapshots: vec![Snapshot {
+                id: 1,
+                timestamp: "2024-12-30T00:30:24Z".to_string(),
+                changes: 1,
+                file_states: vec![FileState {
+                    path: "file1.txt".to_string(),
+                    hash,
+                    size: 12,
+                    last_modified: "timestamp".to_string(),
+                }],
+            }],
+        };
+
+        let metadata_dir = base_path.join(".timemachine");
+        fs::create_dir_all(&metadata_dir)?;
+        let metadata_path = metadata_dir.join("metadata.json");
+        fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata)?,
+        )?;
+
+        // Delete original file
+        fs::remove_file(&file1_path)?;
+
+        let report = RestoreReport {
+            added: vec!["file1.txt".to_string()],
+            modified: vec![],
+            deleted: vec![],
+            unchanged: vec![],
+        };
+
+        perform_restore(base_path, 1, &report)?;
+
+        assert!(file1_path.exists());
+        assert_eq!(fs::read_to_string(&file1_path)?, "file1 content");
+
+        Ok(())
     }
 }

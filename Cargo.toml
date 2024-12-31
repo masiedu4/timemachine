@@ -11,6 +11,7 @@ chrono = "0.4.39"
 tempfile = "3.14.0"
 sha2 = "0.10.8"
 sysinfo = "0.33.1"
+zstd = "0.13.2"
 
 
 

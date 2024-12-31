@@ -1,10 +1,9 @@
 use crate::core::models::{FileState, ModifiedFileDetail, Snapshot, SnapshotMetadata};
-use crate::core::utils::compute_file_hash;
-
+use crate::core::content::ContentStore;
 use std::collections::HashMap;
-use std::io::ErrorKind;
+use std::fs;
+use std::io::{self, ErrorKind};
 use std::path::Path;
-use std::{fs, io};
 
 pub fn load_all_snapshots(path: &str) -> io::Result<SnapshotMetadata> {
     let metadata_path = Path::new(path).join(".timemachine/metadata.json");
@@ -20,8 +19,9 @@ pub fn load_all_snapshots(path: &str) -> io::Result<SnapshotMetadata> {
 pub fn collect_file_states(dir: &str) -> Result<Vec<FileState>, io::Error> {
     let base_path = Path::new(&dir);
     let mut file_states = Vec::new();
-
     let metadata_dir = base_path.join(".timemachine");
+    let store = ContentStore::new(base_path);
+    store.init()?;
 
     for entry in fs::read_dir(base_path)? {
         let entry = entry?;
@@ -31,33 +31,24 @@ pub fn collect_file_states(dir: &str) -> Result<Vec<FileState>, io::Error> {
             continue;
         }
 
-        let _path = path
-            .strip_prefix(base_path)
-            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?
-            .to_string_lossy()
-            .to_string();
-
         let metadata = fs::metadata(&path)?;
-
-        let last_modified = metadata
+        let modified_time = metadata
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs()
-            .to_string();
+            .as_secs();
 
-        let size = metadata.len();
-
-        let hash = compute_file_hash(&path)?;
-
-        let content = fs::read(&path).ok();
+        let hash = store.store_file(&path)?;
 
         let file_state = FileState {
-            path: _path,
-            size,
-            last_modified,
+            path: path
+                .strip_prefix(base_path)
+                .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?
+                .to_string_lossy()
+                .to_string(),
+            size: metadata.len(),
+            last_modified: modified_time.to_string(),
             hash,
-            content,
         };
 
         file_states.push(file_state);
@@ -196,14 +187,14 @@ mod tests {
                 size: 100,
                 hash: "hash1".to_string(),
                 last_modified: "2024-01-01T12:00:00Z".to_string(),
-                content: Some(vec![2,3,4])
+
             },
             FileState {
                 path: "file2.txt".to_string(),
                 size: 200,
                 hash: "hash2".to_string(),
                 last_modified: "2024-01-02T12:00:00Z".to_string(),
-                content: Some(vec![2,3,5,6])
+
             },
         ];
 
@@ -220,7 +211,7 @@ mod tests {
             size: 100,
             hash: "hash1".to_string(),
             last_modified: "2024-01-01T12:00:00Z".to_string(),
-            content: None
+
         }];
 
         let new_states = vec![
@@ -229,14 +220,14 @@ mod tests {
                 size: 100,
                 hash: "hash1".to_string(),
                 last_modified: "2024-01-01T12:00:00Z".to_string(),
-                content: Some(vec![2,3])
+
             },
             FileState {
                 path: "file2.txt".to_string(),
                 size: 200,
                 hash: "hash2".to_string(),
                 last_modified: "2024-01-02T12:00:00Z".to_string(),
-                content: None
+
             },
         ];
 
@@ -254,7 +245,7 @@ mod tests {
             size: 100,
             hash: "oldhash".to_string(),
             last_modified: "2024-01-01T12:00:00Z".to_string(),
-            content: None,
+
         }];
 
         let new_states = vec![FileState {
@@ -262,7 +253,7 @@ mod tests {
             size: 100,
             hash: "newhash".to_string(),
             last_modified: "2024-01-02T12:00:00Z".to_string(),
-            content: Some(vec![3,6])
+
         }];
 
         let old_map = create_file_map(&old_states);
@@ -280,7 +271,7 @@ mod tests {
             size: 100,
             hash: "hash1".to_string(),
             last_modified: "2024-01-01T12:00:00Z".to_string(),
-            content: Some(vec![2,3,5,6])
+
         }];
 
         let new_states: Vec<FileState> = vec![];
