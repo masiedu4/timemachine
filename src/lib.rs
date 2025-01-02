@@ -5,7 +5,7 @@ use chrono::prelude::*;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::{fs, io};
-
+use std::collections::HashSet;
 use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata, RestoreReport};
 use core::snapshot::{collect_file_states, create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
 use core::restore::{validate_permissions,generate_restore_report, has_available_space, has_uncommitted_changes, perform_restore};
@@ -248,17 +248,18 @@ pub fn get_status(dir: &str) -> io::Result<StatusInfo> {
     Ok(status)
 }
 
+
 pub fn delete_snapshot(dir: &str, snapshot_id: usize, cleanup: bool) -> io::Result<()> {
     let base_path = Path::new(dir);
     let metadata_path = base_path.join(".timemachine").join("metadata.json");
     
-    // Load and update metadata
+    // Load metadata
     let mut metadata: SnapshotMetadata = {
         let content = fs::read_to_string(&metadata_path)?;
         serde_json::from_str(&content)?
     };
     
-    // Find and remove the snapshot
+    // Find the snapshot to delete
     let snapshot_index = metadata.snapshots
         .iter()
         .position(|s| s.id == snapshot_id)
@@ -266,25 +267,65 @@ pub fn delete_snapshot(dir: &str, snapshot_id: usize, cleanup: bool) -> io::Resu
             ErrorKind::NotFound,
             format!("Snapshot {} not found", snapshot_id)
         ))?;
+
+    let store = ContentStore::new(base_path);
     
+    // If cleanup is explicitly requested, do a targeted cleanup
+    if cleanup {
+        // Get hashes from the snapshot being deleted
+        let deleted_hashes: Vec<String> = metadata.snapshots[snapshot_index]
+            .file_states
+            .iter()
+            .map(|state| state.hash.clone())
+            .collect();
+            
+        // Get hashes still in use by other snapshots
+        let used_hashes: HashSet<String> = metadata.snapshots
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != snapshot_index)
+            .flat_map(|(_, snapshot)| {
+                snapshot.file_states
+                    .iter()
+                    .map(|state| state.hash.clone())
+            })
+            .collect();
+            
+        // Clean up content that's unique to the deleted snapshot
+        let orphaned_hashes: Vec<String> = deleted_hashes
+            .into_iter()
+            .filter(|hash| !used_hashes.contains(hash))
+            .collect();
+            
+        store.cleanup(&orphaned_hashes)?;
+    }
+    
+    // Remove the snapshot from metadata
     metadata.snapshots.remove(snapshot_index);
     
     // Save updated metadata
     let updated_content = serde_json::to_string_pretty(&metadata)?;
     fs::write(&metadata_path, updated_content)?;
+
+    eprintln!("Snapshots remaining: {}", metadata.snapshots.len());
     
-    // Clean up unused content if requested
-    if cleanup {
-        let store = ContentStore::new(base_path);
-        let used_hashes: Vec<String> = metadata.snapshots
-            .iter()
-            .flat_map(|s| s.file_states.iter().map(|f| f.hash.clone()))
-            .collect();
-        store.cleanup(&used_hashes)?;
+    // If this was the last snapshot, clean up all content
+    if metadata.snapshots.is_empty() {
+        eprintln!(" No snapshots remaining, cleaning up all content");
+        let all_content = store.find_orphaned_content(&metadata)?;
+        eprintln!(" Found {} orphaned files", all_content.len());
+        if !all_content.is_empty() {
+            store.cleanup(&all_content)?;
+            eprintln!("All snapshots deleted. Cleaned up all content.");
+        }
+    } else {
+        eprintln!(" {} snapshots remaining, checking for orphaned content", metadata.snapshots.len());
+        store.auto_cleanup(&metadata)?;
     }
     
     Ok(())
 }
+
 
 #[cfg(test)]
 mod tests {

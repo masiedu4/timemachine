@@ -129,24 +129,30 @@ timemachine diff . 1 2
 Restore a directory to a specific snapshot state.
 
 ```bash
-timemachine restore <DIRECTORY> <SNAPSHOT_ID> [--dry-run]
+timemachine restore <DIRECTORY> <SNAPSHOT_ID> [--dry-run] [--force]
 ```
 
 **Arguments:**
 - `DIRECTORY`: Path to the directory to restore (required)
 - `SNAPSHOT_ID`: ID of the snapshot to restore to (required)
+
+**Options:**
 - `--dry-run`: Show what would be changed without making actual changes
+- `--force`: Force restore even if there are uncommitted changes. This will:
+  1. Create a backup snapshot of the current state
+  2. Override any uncommitted changes
+  3. Restore to the specified snapshot
 
 **Examples:**
 ```bash
-# Preview changes (recommended)
-timemachine restore ~/projects/my-app 2 --dry-run
+# Restore directory to snapshot #5
+timemachine restore /path/to/dir 5
 
-# Perform actual restore
-timemachine restore ~/projects/my-app 2
+# Preview changes without applying them
+timemachine restore /path/to/dir 5 --dry-run
 
-# Restore current directory
-timemachine restore . 2
+# Force restore even with uncommitted changes
+timemachine restore /path/to/dir 5 --force
 ```
 
 ### delete
@@ -159,14 +165,21 @@ timemachine delete <DIRECTORY> <SNAPSHOT_ID> [--cleanup]
 **Arguments:**
 - `DIRECTORY`: Path to the directory (required)
 - `SNAPSHOT_ID`: ID of the snapshot to delete (required)
-- `--cleanup`: Remove unused content after deletion
+- `--cleanup`: Immediately remove content unique to this snapshot
+
+**Cleanup Behavior:**
+- Without `--cleanup`: Content is automatically cleaned up when:
+  1. All snapshots are deleted
+  2. Orphaned content exceeds 100MB
+- With `--cleanup`: Immediately removes content unique to the deleted snapshot
+- Space savings are reported after each cleanup operation
 
 **Examples:**
 ```bash
-# Delete a snapshot
+# Delete a snapshot (automatic cleanup if orphaned content exceeds threshold)
 timemachine delete ~/projects/my-app 2
 
-# Delete and clean up unused content
+# Delete and immediately clean up content unique to this snapshot
 timemachine delete ~/projects/my-app 2 --cleanup
 ```
 
