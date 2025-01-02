@@ -7,7 +7,7 @@ use timemachine;
 #[derive(Parser)]
 #[command(
     name = "timemachine",
-    version = "0.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     author = "Michael Asiedu",
     about = "A version control system for directories that helps track and manage file changes over time",
     long_about = "TimeMachine is a powerful file versioning tool that creates snapshots of directories and allows you to track, restore, and manage changes over time. It provides an easy way to backup and version control any directory on your system."
