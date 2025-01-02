@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::{fs, io};
 
-use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata,RestoreReport};
+use core::models::{Snapshot, SnapshotComparison, SnapshotMetadata, RestoreReport};
 use core::snapshot::{collect_file_states, create_file_map, find_deleted_files, find_modified_files, find_new_files, find_snapshot, load_all_snapshots};
 use core::restore::{validate_permissions,generate_restore_report, has_available_space, has_uncommitted_changes, perform_restore};
 use sysinfo::{DiskRefreshKind, Disks};
@@ -115,40 +115,52 @@ pub fn differentiate_snapshots(
 
 
 
-pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool) -> io::Result<RestoreReport> {
+pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool, force:bool) -> io::Result<RestoreReport> {
     validate_permissions(dir)?;
 
     let base_path = Path::new(dir);
     
     // Step 1: Load snapshots and find the target snapshot
     let all_snapshots = load_all_snapshots(dir)?;
+
+
     let snapshot = find_snapshot(&all_snapshots, snapshot_id)
         .ok_or_else(|| io::Error::new(
-            ErrorKind::NotFound, 
-            format!("Snapshot {} does not exist. Available snapshots: {}", 
-                snapshot_id,
-                all_snapshots.snapshots.iter()
-                    .map(|s| s.id.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
+            ErrorKind::NotFound,
+            format!("Snapshot {} does not exist. Available snapshots: {}",
+                    snapshot_id,
+                    all_snapshots.snapshots.iter()
+                        .map(|s| s.id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
             )
         ))?;
 
-    // Step 2: Check for uncommitted changes
-    if has_uncommitted_changes(dir)? {
-        return Err(io::Error::new(
-            ErrorKind::Other,
-            "Uncommitted changes detected. Take another snapshot before proceeding to restore.",
-        ));
-    }
-
-    // Step 3: Ensure sufficient disk space
+    // Step 2: Ensure sufficient disk space
     if !has_available_space(dir, snapshot)? {
         return Err(io::Error::new(
             ErrorKind::Other,
             "Insufficient disk space for restoration.",
         ));
     }
+
+    // Step 3: Check for uncommitted changes
+    if has_uncommitted_changes(dir)? {
+        // if --force flag is not applied
+        if !force {
+            return Err(io::Error::new(
+                ErrorKind::Other,
+                "Uncommitted changes detected. Take another snapshot before proceeding to restore, or use --force to override (this will automatically create a backup of your current state).",
+            ));
+
+        }
+       // create a backup when using force
+        eprintln!("Creating backup snapshot of current state before force restore...");
+        take_snapshot(dir)?;
+        eprintln!("Backup snapshot created successfully.");
+    }
+
+
 
     // Step 4: Generate restore report
     let current_states = collect_file_states(dir)?;
@@ -161,7 +173,11 @@ pub fn restore_snapshot(dir: &str, snapshot_id: usize, dry_run: bool) -> io::Res
     }
 
     // Step 5: Execute restore operations
+    eprintln!("Restoring to snapshot {}...", snapshot_id);
+
     perform_restore(base_path, snapshot_id, &report)?;
+
+    eprintln!("Restore completed successfully!");
 
     Ok(report)
 }

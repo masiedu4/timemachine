@@ -1,8 +1,8 @@
-use clap::Parser;
 use clap::CommandFactory;
-use timemachine;
+use clap::Parser;
 use clap_complete::{generate_to, shells::*};
 use std::path::PathBuf;
+use timemachine;
 
 #[derive(Parser)]
 #[command(
@@ -152,6 +152,17 @@ enum Commands {
             help = "Perform a trial run with no changes made",
             long_help = "When enabled, shows what would be changed by the restore operation without actually making any changes. Useful for previewing the effects of a restore."
         )]
+        #[arg(
+            long,
+            help = "Force restore even if there are uncommitted changes",
+            long_help = "WARNING: Using --force will override any uncommitted changes in your current directory state. A backup snapshot will be automatically created before forcing the restore."
+        )]
+        force: bool,
+        #[arg(
+            long,
+            help = "Perform a dry run without making any changes",
+            long_help = "Show what changes would be made without actually performing the restore operation."
+        )]
         dry_run: bool,
     },
 
@@ -174,33 +185,31 @@ fn generate_completions(shell_name: Option<String>) -> std::io::Result<()> {
     let shells = vec!["bash", "zsh", "fish", "powershell"];
     let out_dir = PathBuf::from("completions");
     std::fs::create_dir_all(&out_dir)?;
-    
+
     let mut cmd = Cli::command();
     let bin_name = cmd.get_name().to_string();
-    
+
     match shell_name {
-        Some(shell) => {
-            match shell.as_str() {
-                "bash" => {
-                    generate_to(Bash, &mut cmd, &bin_name, &out_dir)?;
-                    Ok(())
-                },
-                "zsh" => {
-                    generate_to(Zsh, &mut cmd, &bin_name, &out_dir)?;
-                    Ok(())
-                },
-                "fish" => {
-                    generate_to(Fish, &mut cmd, &bin_name, &out_dir)?;
-                    Ok(())
-                },
-                "powershell" => {
-                    generate_to(PowerShell, &mut cmd, &bin_name, &out_dir)?;
-                    Ok(())
-                },
-                _ => {
-                    eprintln!("Unsupported shell. Available shells: {}", shells.join(", "));
-                    Ok(())
-                }
+        Some(shell) => match shell.as_str() {
+            "bash" => {
+                generate_to(Bash, &mut cmd, &bin_name, &out_dir)?;
+                Ok(())
+            }
+            "zsh" => {
+                generate_to(Zsh, &mut cmd, &bin_name, &out_dir)?;
+                Ok(())
+            }
+            "fish" => {
+                generate_to(Fish, &mut cmd, &bin_name, &out_dir)?;
+                Ok(())
+            }
+            "powershell" => {
+                generate_to(PowerShell, &mut cmd, &bin_name, &out_dir)?;
+                Ok(())
+            }
+            _ => {
+                eprintln!("Unsupported shell. Available shells: {}", shells.join(", "));
+                Ok(())
             }
         },
         None => {
@@ -268,7 +277,7 @@ fn main() {
                     eprintln!("No snapshots found");
                 }
                 eprintln!("Available space: {} bytes", status.available_space);
-                
+
                 if status.has_uncommitted_changes {
                     eprintln!("\nUncommitted changes:");
                     if !status.modified_files.is_empty() {
@@ -302,7 +311,7 @@ fn main() {
                     snapshot_id, dir, e
                 ),
             }
-        },
+        }
         Commands::Diff {
             dir,
             snapshot_id1,
@@ -326,38 +335,50 @@ fn main() {
             dir,
             snapshot_id,
             dry_run,
-        } => match timemachine::restore_snapshot(dir, *snapshot_id, *dry_run) {
-            Ok(report) => {
-                if report.added.is_empty() && report.modified.is_empty() && report.deleted.is_empty() {
-                    eprintln!("No changes needed - files are already at the target state.");
-                } else {
-                    eprintln!("Changes to be made:");
-                    if !report.added.is_empty() {
-                        eprintln!("Files to add: {:?}", report.added);
-                    }
-                    if !report.modified.is_empty() {
-                        eprintln!("Files to modify: {:?}", report.modified);
-                    }
-                    if !report.deleted.is_empty() {
-                        eprintln!("Files to delete: {:?}", report.deleted);
-                    }
+            force
+        } =>
+            {
+                eprintln!("Preparing to restore directory: {}", dir);
+                if *force {
+                    eprintln!("WARNING: Force flag is enabled. This will:");
+                    eprintln!("  1. Create a backup snapshot of your current state");
+                    eprintln!("  2. Override any uncommitted changes");
+                    eprintln!("  3. Restore to the specified snapshot");
                 }
 
-                if *dry_run {
-                    eprintln!("Dry run complete. No changes were made.");
-                } else {
-                    eprintln!("Restore complete.");
+            match timemachine::restore_snapshot(dir, *snapshot_id, *dry_run, *force) {
+                Ok(report) => {
+                    if report.added.is_empty() && report.modified.is_empty() && report.deleted.is_empty() {
+                        eprintln!("No changes needed - files are already at the target state.");
+                    } else {
+                        eprintln!("Changes to be made:");
+                        if !report.added.is_empty() {
+                            eprintln!("Files to add: {:?}", report.added);
+                        }
+                        if !report.modified.is_empty() {
+                            eprintln!("Files to modify: {:?}", report.modified);
+                        }
+                        if !report.deleted.is_empty() {
+                            eprintln!("Files to delete: {:?}", report.deleted);
+                        }
+                    }
+
+                    if *dry_run {
+                        eprintln!("Dry run complete. No changes were made.");
+                    } else {
+                        eprintln!("Restore complete.");
+                    }
                 }
+                Err(e) => eprintln!(
+                    "Failed to restore snapshot {} in directory '{}': {}",
+                    snapshot_id, dir, e
+                ),
             }
-            Err(e) => eprintln!(
-                "Failed to restore snapshot {} in directory '{}': {}",
-                snapshot_id, dir, e
-            ),
         },
         Commands::Completions { shell } => {
             if let Err(e) = generate_completions(shell.clone()) {
                 eprintln!("Failed to generate completions: {}", e);
             }
-        },
+        }
     }
 }
