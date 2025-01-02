@@ -1,6 +1,6 @@
 [package]
 name = "timemachine"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Michael Asiedu"]
 edition = "2021"
 description = "A powerful file versioning tool for tracking and managing file changes over time"
