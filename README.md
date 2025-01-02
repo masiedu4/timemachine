@@ -21,34 +21,19 @@ brew install masiedu4/timemachine/timemachine
 
 ### Manual Installation
 
-#### macOS
+For manual installation, download the appropriate binary for your system from the [releases page](https://github.com/masiedu4/timemachine/releases).
+
+#### macOS and Linux
+After downloading, extract and move the binary to your PATH:
 ```bash
-# Intel Mac
-curl -LO https://github.com/masiedu4/timemachine/releases/download/v0.1.0/timemachine-macos-amd64.tar.gz
-tar xf timemachine-macos-amd64.tar.gz
-sudo mv timemachine /usr/local/bin/
-
-# Apple Silicon Mac
-curl -LO https://github.com/masiedu4/timemachine/releases/download/v0.1.0/timemachine-macos-arm64.tar.gz
-tar xf timemachine-macos-arm64.tar.gz
-sudo mv timemachine /usr/local/bin/
-```
-
-#### Linux
-```bash
-# x86_64
-curl -LO https://github.com/masiedu4/timemachine/releases/download/v0.1.0/timemachine-linux-amd64.tar.gz
-tar xf timemachine-linux-amd64.tar.gz
-sudo mv timemachine /usr/local/bin/
-
-# ARM64
-curl -LO https://github.com/masiedu4/timemachine/releases/download/v0.1.0/timemachine-linux-arm64.tar.gz
-tar xf timemachine-linux-arm64.tar.gz
+tar xf timemachine-*.tar.gz
 sudo mv timemachine /usr/local/bin/
 ```
 
 #### Windows
-Download the appropriate zip file from the [releases page](https://github.com/masiedu4/timemachine/releases) and add it to your PATH.
+1. Download the zip file for Windows from the [releases page](https://github.com/masiedu4/timemachine/releases)
+2. Extract the executable
+3. Add it to your PATH or move it to a directory that's already in your PATH
 
 ## Quick Start
 

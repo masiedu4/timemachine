@@ -80,7 +80,15 @@ jobs:
               tar -czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
             fi
           fi
-          
+
+      - name: Generate Checksums
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          echo "CHECKSUMS<<EOF" >> $GITHUB_ENV
+          sha256sum *-linux-* *-windows-* >> $GITHUB_ENV
+          curl -s -L $(curl -s https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts | jq -r '.artifacts[] | select(.name | contains("macos")) | .url') | sha256sum >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
