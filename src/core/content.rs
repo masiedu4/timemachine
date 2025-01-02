@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::core::utils::compute_file_hash;
 
 use std::fs::{self, File};
@@ -5,6 +6,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 use zstd::stream::{copy_decode, copy_encode};
+use crate::core::models::SnapshotMetadata;
 
 pub struct ContentStore {
     base_path: PathBuf,
@@ -58,15 +60,87 @@ impl ContentStore {
         Ok(())
     }
 
-    pub fn cleanup(&self, used_hashes: &[String]) -> io::Result<()> {
-        let used_hashes: std::collections::HashSet<_> = used_hashes.iter().collect();
+    /// Returns a list of content hashes that are not referenced by any snapshot
+    pub fn find_orphaned_content(&self, metadata: &SnapshotMetadata) -> io::Result<Vec<String>> {
+        let mut orphaned = Vec::new();
+        
+        // Get all content hashes currently stored
+        let stored_hashes: HashSet<String> = fs::read_dir(&self.base_path)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+            
+        // Get all hashes referenced by snapshots
+        let used_hashes: HashSet<String> = metadata.snapshots
+            .iter()
+            .flat_map(|snapshot| {
+                snapshot.file_states
+                    .iter()
+                    .map(|state| state.hash.clone())
+            })
+            .collect();
+            
+        // Find hashes that exist in storage but aren't referenced
+        for hash in stored_hashes {
+            if !used_hashes.contains(&hash) {
+                orphaned.push(hash);
+            }
+        }
+        
+        Ok(orphaned)
+    }
+
+    /// Automatically clean up orphaned content if it exceeds a certain threshold
+    pub fn auto_cleanup(&self, metadata: &SnapshotMetadata) -> io::Result<()> {
+        const ORPHANED_THRESHOLD_BYTES: u64 = 100 * 1024 * 1024; // 100MB
+        
+        let orphaned = self.find_orphaned_content(metadata)?;
+        if orphaned.is_empty() {
+            return Ok(());
+        }
+        
+        // Calculate total size of orphaned content
+        let mut total_size = 0u64;
+        for hash in &orphaned {
+            let path = self.base_path.join(hash);
+            if let Ok(metadata) = fs::metadata(path) {
+                total_size += metadata.len();
+            }
+        }
+        
+        // If orphaned content exceeds threshold, clean it up
+        if total_size > ORPHANED_THRESHOLD_BYTES {
+            self.cleanup(&orphaned)?;
+            eprintln!(
+                "Cleaned up {:.2}MB of unused content", 
+                total_size as f64 / (1024.0 * 1024.0)
+            );
+        }
+        
+        Ok(())
+    }
+    
+    pub fn cleanup(&self, to_remove: &[String]) -> io::Result<()> {
+        let to_remove: std::collections::HashSet<_> = to_remove.iter().collect();
+        let mut cleaned_size = 0u64;
 
         for entry in fs::read_dir(&self.base_path)? {
             let entry = entry?;
             let hash = entry.file_name().to_string_lossy().to_string();
-            if !used_hashes.contains(&hash) {
+            // Remove files that are in our to_remove list
+            if to_remove.contains(&hash) {
+                if let Ok(metadata) = entry.metadata() {
+                    cleaned_size += metadata.len();
+                }
                 fs::remove_file(entry.path())?;
             }
+        }
+
+        if cleaned_size > 0 {
+            eprintln!(
+                "Cleaned up {:.2}MB of content", 
+                cleaned_size as f64 / (1024.0 * 1024.0)
+            );
         }
 
         Ok(())
@@ -123,12 +197,13 @@ mod tests {
             fs::read_to_string(&restored_file)?
         );
 
-        // Test cleanup
-        store.cleanup(&[hash.clone()])?;
-        assert!(store.verify_content(&hash)?);
-
+        // Test cleanup by passing empty list (should keep all files)
         store.cleanup(&[])?;
-        assert!(!store.verify_content(&hash)?);
+        assert!(store.verify_content(&hash)?, "Content should still exist after cleanup with empty list");
+
+        // Test cleanup by passing the hash (should remove the file)
+        store.cleanup(&[hash.clone()])?;
+        assert!(!store.verify_content(&hash)?, "Content should be removed after cleanup with its hash");
 
         Ok(())
     }
